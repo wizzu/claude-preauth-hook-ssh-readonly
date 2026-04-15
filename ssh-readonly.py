@@ -82,6 +82,12 @@ READONLY_COMMANDS = [
 
 # --- Config: patterns that block an otherwise-approved command ---
 # Checked after the allowlist: if any match, the command is not auto-approved.
+# Patterns are matched globally against the full inner command, not scoped to
+# specific allowlisted commands. This is intentional: every entry here is
+# unsafe regardless of context (redirection always writes, -exec always runs
+# arbitrary commands, etc.). Exception: the ip pattern is scoped to \bip\b to
+# avoid false positives, since words like "set" or "add" appear legitimately
+# in other commands (e.g. grep arguments, awk output).
 UNSAFE_PATTERNS = [
     r'(?:^|\s)\d*>>?\s',                                   # output redirection (>, >>, 2>, 2>>)
     r'\s-exec\b',                                          # find -exec
