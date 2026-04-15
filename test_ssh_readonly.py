@@ -85,5 +85,105 @@ class TestBlocked(unittest.TestCase):
         self.assertEqual(run(f'ssh {HOST} "sed -ni \'s/foo/bar/\' /etc/file"'), "ask")
 
 
+class TestDockerApproved(unittest.TestCase):
+    def test_docker_ps(self):
+        self.assertEqual(run(f'ssh {HOST} "docker ps"'), "allow")
+
+    def test_docker_ps_all(self):
+        self.assertEqual(run(f'ssh {HOST} "docker ps -a"'), "allow")
+
+    def test_docker_images(self):
+        self.assertEqual(run(f'ssh {HOST} "docker images"'), "allow")
+
+    def test_docker_inspect(self):
+        self.assertEqual(run(f'ssh {HOST} "docker inspect mycontainer"'), "allow")
+
+    def test_docker_logs(self):
+        self.assertEqual(run(f'ssh {HOST} "docker logs mycontainer"'), "allow")
+
+    def test_docker_stats(self):
+        self.assertEqual(run(f'ssh {HOST} "docker stats --no-stream"'), "allow")
+
+    def test_docker_top(self):
+        self.assertEqual(run(f'ssh {HOST} "docker top mycontainer"'), "allow")
+
+    def test_docker_diff(self):
+        self.assertEqual(run(f'ssh {HOST} "docker diff mycontainer"'), "allow")
+
+    def test_docker_info(self):
+        self.assertEqual(run(f'ssh {HOST} "docker info"'), "allow")
+
+    def test_docker_version(self):
+        self.assertEqual(run(f'ssh {HOST} "docker version"'), "allow")
+
+    def test_docker_system_df(self):
+        self.assertEqual(run(f'ssh {HOST} "docker system df"'), "allow")
+
+    def test_docker_network_ls(self):
+        self.assertEqual(run(f'ssh {HOST} "docker network ls"'), "allow")
+
+    def test_docker_network_inspect(self):
+        self.assertEqual(run(f'ssh {HOST} "docker network inspect mynet"'), "allow")
+
+    def test_docker_volume_ls(self):
+        self.assertEqual(run(f'ssh {HOST} "docker volume ls"'), "allow")
+
+    def test_docker_image_ls(self):
+        self.assertEqual(run(f'ssh {HOST} "docker image ls"'), "allow")
+
+    def test_docker_container_ls(self):
+        self.assertEqual(run(f'ssh {HOST} "docker container ls"'), "allow")
+
+    def test_docker_container_logs(self):
+        self.assertEqual(run(f'ssh {HOST} "docker container logs mycontainer"'), "allow")
+
+    def test_docker_compose_ps(self):
+        self.assertEqual(run(f'ssh {HOST} "docker compose ps"'), "allow")
+
+    def test_docker_compose_logs(self):
+        self.assertEqual(run(f'ssh {HOST} "docker compose logs"'), "allow")
+
+    def test_docker_compose_config(self):
+        self.assertEqual(run(f'ssh {HOST} "docker compose config"'), "allow")
+
+    def test_docker_hyphen_compose_ps(self):
+        self.assertEqual(run(f'ssh {HOST} "docker-compose ps"'), "allow")
+
+    def test_docker_hyphen_compose_logs(self):
+        self.assertEqual(run(f'ssh {HOST} "docker-compose logs myservice"'), "allow")
+
+    def test_sudo_docker_ps(self):
+        self.assertEqual(run(f'ssh {HOST} "sudo docker ps"'), "allow")
+
+
+class TestDockerBlocked(unittest.TestCase):
+    def test_docker_exec(self):
+        self.assertEqual(run(f'ssh {HOST} "docker exec mycontainer sh"'), "ask")
+
+    def test_docker_run(self):
+        self.assertEqual(run(f'ssh {HOST} "docker run nginx"'), "ask")
+
+    def test_docker_rm(self):
+        self.assertEqual(run(f'ssh {HOST} "docker rm mycontainer"'), "ask")
+
+    def test_docker_stop(self):
+        self.assertEqual(run(f'ssh {HOST} "docker stop mycontainer"'), "ask")
+
+    def test_docker_system_prune(self):
+        self.assertEqual(run(f'ssh {HOST} "docker system prune"'), "ask")
+
+    def test_docker_network_connect(self):
+        self.assertEqual(run(f'ssh {HOST} "docker network connect mynet mycontainer"'), "ask")
+
+    def test_docker_image_prune(self):
+        self.assertEqual(run(f'ssh {HOST} "docker image prune"'), "ask")
+
+    def test_docker_hyphen_compose_up(self):
+        self.assertEqual(run(f'ssh {HOST} "docker-compose up"'), "ask")
+
+    def test_docker_compose_down(self):
+        self.assertEqual(run(f'ssh {HOST} "docker compose down"'), "ask")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

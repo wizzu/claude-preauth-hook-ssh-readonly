@@ -55,6 +55,16 @@ READONLY_COMMANDS = [
     r"systemctl\s+status",
     r"journalctl",
 
+    # Container inspection (read-only subcommands only; exec/run/rm/stop/etc. fall through)
+    (r"docker\s+(ps|images|inspect|logs|stats|history|port|top|diff|info|version"
+     r"|system\s+df"
+     r"|network\s+(ls|list|inspect)"
+     r"|volume\s+(ls|list|inspect)"
+     r"|image\s+(ls|list|inspect|history)"
+     r"|container\s+(ls|list|ps|inspect|logs|top|stats|port|diff)"
+     r"|compose\s+(ps|logs|config|images|top|port))"),
+    r"docker-compose\s+(ps|logs|config|images|top|port)",
+
     # Text processing (used in pipelines)
     r"awk",
     r"sed",
