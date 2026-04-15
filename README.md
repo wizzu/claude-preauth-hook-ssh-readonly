@@ -36,27 +36,28 @@ host falls through to the prompt.
 
 ## Configuring the allowlist
 
-The read-only command patterns are defined at the top of `ssh-readonly.py` in
-the `READONLY_COMMANDS` list. Each entry is a Python regex matched against the
-inner command (after stripping an optional leading `sudo`).
+Two lists at the top of `ssh-readonly.py` control what gets auto-approved.
 
-Simple commands are just plain strings:
+**`READONLY_COMMANDS`** — patterns matched against the start of the inner
+command (after stripping an optional leading `sudo`). Simple commands are plain
+strings; commands where only specific subcommands or flags are safe use a regex:
 
 ```python
 READONLY_COMMANDS = [
     r"cat",
     r"grep",
     ...
+    r"systemctl\s+status",
+    r"ip\s+(addr|address|link|route|neigh|rule|netns)(\s+(show|list|ls).*)?",
+    r"fdisk\s+-l",
 ]
 ```
 
-Commands where only specific subcommands/flags are safe use a regex:
-
-```python
-r"systemctl\s+status",
-r"ip\s+(addr|address|link|route|neigh|rule|netns)(\s+(show|list|ls).*)?",
-r"fdisk\s+-l",
-```
+**`UNSAFE_PATTERNS`** — patterns searched across the whole inner command *after*
+an allowlist match. If any match, the command falls through to the prompt.
+Used to block things that would otherwise slip past a broad allowlist entry:
+output redirection, `find -exec`/`-delete`, `sed -i`, `tee` in pipelines, and
+`ip` write subcommands (`set`, `add`, `del`, etc.).
 
 ## Debugging
 
@@ -72,8 +73,8 @@ Remove it when done.
 
 ## Development
 
-- `READONLY_COMMANDS` at the top of the script is the only thing most changes
-  will touch
+- `READONLY_COMMANDS` and `UNSAFE_PATTERNS` at the top of the script are the
+  only things most changes will touch
 - Each entry is a Python regex — simple command names are plain strings, but
   entries like `systemctl` and `ip` need subcommand matching to avoid
   accidentally allowing write operations
@@ -85,7 +86,13 @@ Remove it when done.
 cp ssh-readonly.py ~/.claude/hooks/ssh-readonly.py
 ```
 
-Test changes by running the script directly before deploying:
+Run the test suite before deploying:
+
+```bash
+python3 test_ssh_readonly.py
+```
+
+For ad-hoc checks, you can also drive the script directly:
 
 ```bash
 echo '{"tool_input": {"command": "ssh keep \"grep foo /etc/conf\""}}' \
