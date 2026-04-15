@@ -79,11 +79,26 @@ READONLY_COMMANDS = [
     r"printenv",
     r"which",
 ]
+
+# --- Config: patterns that block an otherwise-approved command ---
+# Checked after the allowlist: if any match, the command is not auto-approved.
+UNSAFE_PATTERNS = [
+    r'(?:^|\s)\d*>>?\s',                                   # output redirection (>, >>, 2>, 2>>)
+    r'\s-exec\b',                                          # find -exec
+    r'\s-delete\b',                                        # find -delete
+    r'\s-remove\b',                                        # find -remove
+    r'[|;]\s*tee\b',                                       # tee in a pipeline (always writes)
+    r'\bsed\b.*\s-[a-zA-Z]*i',                            # sed -i / -ni / -i.bak (in-place edit)
+    r'\bip\b.*\s+(set|add|del|delete|flush|change|replace|append)\b',  # ip write operations
+]
 # --- End config ---
 
 # Build combined pattern from the list above
 _combined = "|".join(f"(?:{p})" for p in READONLY_COMMANDS)
 readonly_re = re.compile(rf"^(sudo\s+)?({_combined})\b", re.DOTALL)
+
+_unsafe_combined = "|".join(f"(?:{p})" for p in UNSAFE_PATTERNS)
+unsafe_re = re.compile(_unsafe_combined, re.DOTALL)
 
 # -- Rest of script unchanged --
 
@@ -107,7 +122,7 @@ inner = (m.group(2) or m.group(3) or m.group(4)).strip()
 if host != allowed_host:
     print(ask); sys.exit(0)
 
-if readonly_re.match(inner):
+if readonly_re.match(inner) and not unsafe_re.search(inner):
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
         "permissionDecision": "allow",
         "permissionDecisionReason": f"Read-only ssh {host} command auto-approved"}}))
