@@ -109,6 +109,7 @@ Expected output for an approved command:
 - Claude Code will ask for one-time approval of a new project-level hook on
   first use — check `/hooks` inside the session if commands aren't being
   auto-approved
-- Cross-host SSH (e.g. `ssh prod-server` from the dev-server project) hits the
-  host check and falls through to the normal prompt — not silently blocked
+- Non-SSH commands and SSH to any host other than the configured one produce no
+  hook output, deferring to Claude Code's default permission logic — not
+  silently blocked or automatically prompted by the hook
 

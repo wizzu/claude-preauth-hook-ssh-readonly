@@ -12,15 +12,19 @@ SCRIPT = "ssh-readonly.py"
 HOST = "prod-server"
 
 
-def run(command: str, host: str = HOST) -> str:
-    """Pipe a tool_input JSON to the script and return the permissionDecision."""
+def run(command: str, host: str | None = HOST) -> str | None:
+    """Pipe a tool_input JSON to the script and return the permissionDecision.
+
+    Returns None when the script exits with no output (defer to default
+    permissions), or the decision string ("allow" / "ask") otherwise.
+    """
     payload = json.dumps({"tool_input": {"command": command}})
-    result = subprocess.run(
-        [sys.executable, SCRIPT, host],
-        input=payload,
-        capture_output=True,
-        text=True,
-    )
+    args = [sys.executable, SCRIPT]
+    if host is not None:
+        args.append(host)
+    result = subprocess.run(args, input=payload, capture_output=True, text=True)
+    if not result.stdout.strip():
+        return None
     return json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"]
 
 
@@ -47,13 +51,26 @@ class TestApproved(unittest.TestCase):
         self.assertEqual(run(f'ssh {HOST} "grep foo /etc/file | sed \'s/foo/bar/\'"'), "allow")
 
 
-class TestBlocked(unittest.TestCase):
+class TestDeferred(unittest.TestCase):
+    """Commands where the hook has no opinion and defers to default permissions."""
+
+    def test_no_host_configured(self):
+        self.assertIsNone(run(f'ssh {HOST} "grep foo /etc/passwd"', host=None))
+
     def test_wrong_host(self):
-        self.assertEqual(run(f'ssh other "grep foo /etc/passwd"'), "ask")
+        self.assertIsNone(run(f'ssh other "grep foo /etc/passwd"'))
 
     def test_not_ssh(self):
-        self.assertEqual(run('grep foo /etc/passwd'), "ask")
+        self.assertIsNone(run('grep foo /etc/passwd'))
 
+    def test_local_du(self):
+        self.assertIsNone(run('du -sh /some/local/path'))
+
+    def test_local_ls(self):
+        self.assertIsNone(run('ls -la /tmp'))
+
+
+class TestBlocked(unittest.TestCase):
     def test_rm(self):
         self.assertEqual(run(f'ssh {HOST} "rm /tmp/foo"'), "ask")
 

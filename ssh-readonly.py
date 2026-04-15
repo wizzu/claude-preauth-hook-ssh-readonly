@@ -127,11 +127,11 @@ cmd = data.get("tool_input", {}).get("command", "")
 ask = json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask"}})
 
 if not allowed_host:
-    print(ask); sys.exit(0)
+    sys.exit(0)  # No configured host — defer to Claude Code's default permissions
 
 m = re.match(r'^ssh\s+(\S+)\s+(?:"(.+)"|\'(.+)\'|(.+))$', cmd, re.DOTALL)
 if not m:
-    print(ask); sys.exit(0)
+    sys.exit(0)  # Not an SSH command — defer to Claude Code's default permissions
 
 host = m.group(1)
 inner = (m.group(2) or m.group(3) or m.group(4)).strip()
@@ -142,7 +142,7 @@ if os.path.exists(_debug_log):
         _f.write(f"cmd={cmd!r}\nhost={host!r}\ninner={inner!r}\n---\n")
 
 if host != allowed_host:
-    print(ask); sys.exit(0)
+    sys.exit(0)  # SSH to a different host — defer to Claude Code's default permissions
 
 if readonly_re.match(inner) and not unsafe_re.search(inner):
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
