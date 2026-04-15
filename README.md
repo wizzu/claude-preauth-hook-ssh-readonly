@@ -70,6 +70,31 @@ with open(os.path.expanduser("~/.claude/hooks/debug.log"), "a") as f:
 
 Remove it when done.
 
+## Development
+
+- `READONLY_COMMANDS` at the top of the script is the only thing most changes
+  will touch
+- Each entry is a Python regex — simple command names are plain strings, but
+  entries like `systemctl` and `ip` need subcommand matching to avoid
+  accidentally allowing write operations
+- The script must stay a single file with no dependencies beyond the standard
+  library — it runs in any Python 3 environment without a venv
+- After any change, deploy with:
+
+```bash
+cp ssh-readonly.py ~/.claude/hooks/ssh-readonly.py
+```
+
+Test changes by running the script directly before deploying:
+
+```bash
+echo '{"tool_input": {"command": "ssh keep \"grep foo /etc/conf\""}}' \
+  | python3 ssh-readonly.py keep
+```
+
+Expected output for an approved command:
+`{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow", ...}}`
+
 ## Notes
 
 - The hook must be executable (`chmod +x`)
