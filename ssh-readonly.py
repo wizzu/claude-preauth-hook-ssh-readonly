@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import os
 import re
 import sys
 
@@ -124,6 +125,11 @@ if not m:
 
 host = m.group(1)
 inner = (m.group(2) or m.group(3) or m.group(4)).strip()
+
+_debug_log = os.path.expanduser("~/.claude/hooks/ssh-readonly-debug.log")
+if os.path.exists(_debug_log):
+    with open(_debug_log, "a") as _f:
+        _f.write(f"cmd={cmd!r}\nhost={host!r}\ninner={inner!r}\n---\n")
 
 if host != allowed_host:
     print(ask); sys.exit(0)

@@ -61,15 +61,16 @@ output redirection, `find -exec`/`-delete`, `sed -i`, `tee` in pipelines, and
 
 ## Debugging
 
-Add this block right after `inner` is parsed to log what the script sees:
+The script logs to `~/.claude/hooks/ssh-readonly-debug.log` when that file
+exists. To enable:
 
-```python
-import os
-with open(os.path.expanduser("~/.claude/hooks/debug.log"), "a") as f:
-    f.write(f"cmd={cmd!r}\nhost={host!r}\ninner={inner!r}\n---\n")
+```bash
+touch ~/.claude/hooks/ssh-readonly-debug.log
 ```
 
-Remove it when done.
+To disable, delete the file. The log records `cmd`, `host`, and `inner` for
+each invocation, which is enough to diagnose why a command was or wasn't
+auto-approved.
 
 ## Development
 
