@@ -30,9 +30,9 @@ the allowed SSH host as an argument:
 }
 ```
 
-Replace `<hostname>` with the SSH alias used in that project (e.g. `keep` or
-`tower`). Only commands matching that host are auto-approved; SSH to any other
-host falls through to the prompt.
+Replace `<hostname>` with the SSH alias used in that project (e.g. `dev-server`
+or `prod-server`). Only commands matching that host are auto-approved; SSH to
+any other host falls through to the prompt.
 
 ## Configuring the allowlist
 
@@ -95,8 +95,8 @@ python3 test_ssh_readonly.py
 For ad-hoc checks, you can also drive the script directly:
 
 ```bash
-echo '{"tool_input": {"command": "ssh keep \"grep foo /etc/conf\""}}' \
-  | python3 ssh-readonly.py keep
+echo '{"tool_input": {"command": "ssh prod-server \"grep foo /etc/conf\""}}' \
+  | python3 ssh-readonly.py prod-server
 ```
 
 Expected output for an approved command:
@@ -108,6 +108,6 @@ Expected output for an approved command:
 - Claude Code will ask for one-time approval of a new project-level hook on
   first use — check `/hooks` inside the session if commands aren't being
   auto-approved
-- Cross-host SSH (e.g. `ssh keep` from the tower project) hits the host check
-  and falls through to the normal prompt — not silently blocked
+- Cross-host SSH (e.g. `ssh prod-server` from the dev-server project) hits the
+  host check and falls through to the normal prompt — not silently blocked
 

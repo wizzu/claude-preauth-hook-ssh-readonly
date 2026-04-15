@@ -9,7 +9,7 @@ import sys
 import unittest
 
 SCRIPT = "ssh-readonly.py"
-HOST = "keep"
+HOST = "prod-server"
 
 
 def run(command: str, host: str = HOST) -> str:
