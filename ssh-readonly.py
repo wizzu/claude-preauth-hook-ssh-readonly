@@ -109,48 +109,77 @@ readonly_re = re.compile(rf"^(sudo\s+)?({_combined})\b", re.DOTALL)
 _unsafe_combined = "|".join(f"(?:{p})" for p in UNSAFE_PATTERNS)
 unsafe_re = re.compile(_unsafe_combined, re.DOTALL)
 
-# -- Rest of script unchanged --
 
-allowed_host = sys.argv[1] if len(sys.argv) > 1 else None
+def decide(command: str, allowed_host: str | None) -> str | None:
+    """Classify an SSH command for the pre-tool-use hook.
 
-data = json.load(sys.stdin)
-cmd = data.get("tool_input", {}).get("command", "")
+    Returns:
+        "allow"  — read-only command on the configured host; auto-approve.
+        "ask"    — potentially destructive command on the configured host; block.
+        None     — outside the hook's scope (no host configured, wrong host, not SSH);
+                   defer to Claude Code's default permissions.
+    """
+    if not allowed_host:
+        return None
 
-ask = json.dumps(
-    {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask"}}
-)
+    m = re.match(r'^ssh\s+(\S+)\s+(?:"(.+)"|\'(.+)\'|(.+))$', command, re.DOTALL)
+    if not m:
+        return None
 
-if not allowed_host:
-    sys.exit(0)  # No configured host — defer to Claude Code's default permissions
+    host = m.group(1)
+    inner = (m.group(2) or m.group(3) or m.group(4)).strip()
 
-m = re.match(r'^ssh\s+(\S+)\s+(?:"(.+)"|\'(.+)\'|(.+))$', cmd, re.DOTALL)
-if not m:
-    sys.exit(0)  # Not an SSH command — defer to Claude Code's default permissions
+    if host != allowed_host:
+        return None
 
-host = m.group(1)
-inner = (m.group(2) or m.group(3) or m.group(4)).strip()
+    if readonly_re.match(inner) and not unsafe_re.search(inner):
+        return "allow"
+    return "ask"
 
-_debug_log = os.path.expanduser("~/.claude/hooks/ssh-readonly-debug.log")
-if os.path.exists(_debug_log):
-    with open(_debug_log, "a") as _f:
-        _f.write(f"cmd={cmd!r}\nhost={host!r}\ninner={inner!r}\n---\n")
 
-if host != allowed_host:
-    sys.exit(0)  # SSH to a different host — defer to Claude Code's default permissions
+def main() -> None:
+    allowed_host = sys.argv[1] if len(sys.argv) > 1 else None
 
-if readonly_re.match(inner) and not unsafe_re.search(inner):
-    print(
-        json.dumps(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "allow",
-                    "permissionDecisionReason": f"Read-only ssh {host} command auto-approved",
+    data = json.load(sys.stdin)
+    cmd = data.get("tool_input", {}).get("command", "")
+
+    _debug_log = os.path.expanduser("~/.claude/hooks/ssh-readonly-debug.log")
+    if os.path.exists(_debug_log):
+        m = re.match(r'^ssh\s+(\S+)\s+(?:"(.+)"|\'(.+)\'|(.+))$', cmd, re.DOTALL)
+        if m:
+            host = m.group(1)
+            inner = (m.group(2) or m.group(3) or m.group(4)).strip()
+            with open(_debug_log, "a") as f:
+                f.write(f"cmd={cmd!r}\nhost={host!r}\ninner={inner!r}\n---\n")
+
+    result = decide(cmd, allowed_host)
+
+    if result is None:
+        sys.exit(0)  # Defer to Claude Code's default permissions
+
+    if result == "allow":
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "allow",
+                        "permissionDecisionReason": (
+                            f"Read-only ssh {allowed_host} command auto-approved"
+                        ),
+                    }
                 }
-            }
+            )
         )
-    )
-else:
-    print(ask)
+    else:
+        print(
+            json.dumps(
+                {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask"}}
+            )
+        )
 
-sys.exit(0)
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

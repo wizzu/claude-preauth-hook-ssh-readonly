@@ -35,4 +35,4 @@ testpaths = ["tests"]
 addopts = "-p no:cacheprovider"
 
 [tool.bandit]
-skips = []
+skips = ["B101"]  # assert is idiomatic in pytest tests

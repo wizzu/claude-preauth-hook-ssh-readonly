@@ -1,211 +1,153 @@
 #!/usr/bin/env python3
-"""Basic smoke tests for ssh-readonly.py.
+"""Tests for ssh-readonly.py."""
 
-Run with:  make test
-"""
-
+import importlib.util
 import json
 
-# B404: test harness intentionally uses subprocess to invoke the hook script as a child process.
+# B404: needed for the single subprocess integration test (verifies the script as a child process).
 import subprocess  # nosec B404
 import sys
-import unittest
 from pathlib import Path
 
-SCRIPT = str(Path(__file__).parent.parent / "ssh-readonly.py")
+import pytest
+
+# Load the script as a module (importlib needed because the filename contains a hyphen)
+_script_path = Path(__file__).parent.parent / "ssh-readonly.py"
+_spec = importlib.util.spec_from_file_location("ssh_readonly", _script_path)
+assert _spec is not None and _spec.loader is not None
+_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)  # type: ignore[union-attr]
+decide = _mod.decide
+
 HOST = "prod-server"
 
 
-def run(command: str, host: str | None = HOST) -> str | None:
-    """Pipe a tool_input JSON to the script and return the permissionDecision.
-
-    Returns None when the script exits with no output (defer to default
-    permissions), or the decision string ("allow" / "ask") otherwise.
-    """
-    payload = json.dumps({"tool_input": {"command": command}})
-    args = [sys.executable, SCRIPT]
-    if host is not None:
-        args.append(host)
-    # B603: args are fully controlled — sys.executable, a trusted script path, and a string literal.
-    result = subprocess.run(args, input=payload, capture_output=True, text=True)  # nosec B603
-    if not result.stdout.strip():
-        return None
-    return json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"]
+# ── Approved ─────────────────────────────────────────────────────────────────
 
 
-class TestApproved(unittest.TestCase):
-    def test_grep(self):
-        self.assertEqual(run(f'ssh {HOST} "grep foo /etc/passwd"'), "allow")
-
-    def test_cat(self):
-        self.assertEqual(run(f'ssh {HOST} "cat /etc/hosts"'), "allow")
-
-    def test_find_safe(self):
-        self.assertEqual(run(f"ssh {HOST} \"find /var -name '*.log'\""), "allow")
-
-    def test_systemctl_status(self):
-        self.assertEqual(run(f'ssh {HOST} "systemctl status nginx"'), "allow")
-
-    def test_sudo(self):
-        self.assertEqual(run(f'ssh {HOST} "sudo cat /etc/shadow"'), "allow")
-
-    def test_pipeline(self):
-        self.assertEqual(run(f'ssh {HOST} "grep error /var/log/syslog | wc -l"'), "allow")
-
-    def test_sed_filter(self):
-        self.assertEqual(run(f"ssh {HOST} \"grep foo /etc/file | sed 's/foo/bar/'\""), "allow")
+@pytest.mark.parametrize(
+    "command",
+    [
+        f'ssh {HOST} "grep foo /etc/passwd"',
+        f'ssh {HOST} "cat /etc/hosts"',
+        f"ssh {HOST} \"find /var -name '*.log'\"",
+        f'ssh {HOST} "systemctl status nginx"',
+        f'ssh {HOST} "sudo cat /etc/shadow"',
+        f'ssh {HOST} "grep error /var/log/syslog | wc -l"',
+        f"ssh {HOST} \"grep foo /etc/file | sed 's/foo/bar/'\"",
+    ],
+)
+def test_approved(command: str) -> None:
+    assert decide(command, HOST) == "allow"
 
 
-class TestDeferred(unittest.TestCase):
-    """Commands where the hook has no opinion and defers to default permissions."""
-
-    def test_no_host_configured(self):
-        self.assertIsNone(run(f'ssh {HOST} "grep foo /etc/passwd"', host=None))
-
-    def test_wrong_host(self):
-        self.assertIsNone(run('ssh other "grep foo /etc/passwd"'))
-
-    def test_not_ssh(self):
-        self.assertIsNone(run("grep foo /etc/passwd"))
-
-    def test_local_du(self):
-        self.assertIsNone(run("du -sh /some/local/path"))
-
-    def test_local_ls(self):
-        self.assertIsNone(run("ls -la /tmp"))
+# ── Deferred ─────────────────────────────────────────────────────────────────
 
 
-class TestBlocked(unittest.TestCase):
-    def test_rm(self):
-        self.assertEqual(run(f'ssh {HOST} "rm /tmp/foo"'), "ask")
-
-    def test_systemctl_restart(self):
-        self.assertEqual(run(f'ssh {HOST} "systemctl restart nginx"'), "ask")
-
-    def test_redirection(self):
-        self.assertEqual(run(f'ssh {HOST} "grep foo /etc/passwd > /tmp/out"'), "ask")
-
-    def test_find_exec(self):
-        self.assertEqual(run(f'ssh {HOST} "find /tmp -exec rm {{}} \\;"'), "ask")
-
-    def test_find_delete(self):
-        self.assertEqual(run(f"ssh {HOST} \"find /tmp -name '*.tmp' -delete\""), "ask")
-
-    def test_ip_link_set(self):
-        self.assertEqual(run(f'ssh {HOST} "ip link set eth0 down"'), "ask")
-
-    def test_tee_in_pipeline(self):
-        self.assertEqual(run(f'ssh {HOST} "grep foo /etc/passwd | tee /tmp/out"'), "ask")
-
-    def test_sed_inplace(self):
-        self.assertEqual(run(f"ssh {HOST} \"sed -i 's/foo/bar/' /etc/file\""), "ask")
-
-    def test_sed_inplace_bak(self):
-        self.assertEqual(run(f"ssh {HOST} \"sed -i.bak 's/foo/bar/' /etc/file\""), "ask")
-
-    def test_sed_inplace_combined_flag(self):
-        self.assertEqual(run(f"ssh {HOST} \"sed -ni 's/foo/bar/' /etc/file\""), "ask")
+@pytest.mark.parametrize(
+    "command,host",
+    [
+        (f'ssh {HOST} "grep foo /etc/passwd"', None),  # no host configured
+        ('ssh other "grep foo /etc/passwd"', HOST),  # wrong host
+        ("grep foo /etc/passwd", HOST),  # not SSH
+        ("du -sh /some/local/path", HOST),  # local command
+        ("ls -la /tmp", HOST),  # local command
+    ],
+)
+def test_deferred(command: str, host: str | None) -> None:
+    assert decide(command, host) is None
 
 
-class TestDockerApproved(unittest.TestCase):
-    def test_docker_ps(self):
-        self.assertEqual(run(f'ssh {HOST} "docker ps"'), "allow")
-
-    def test_docker_ps_all(self):
-        self.assertEqual(run(f'ssh {HOST} "docker ps -a"'), "allow")
-
-    def test_docker_images(self):
-        self.assertEqual(run(f'ssh {HOST} "docker images"'), "allow")
-
-    def test_docker_inspect(self):
-        self.assertEqual(run(f'ssh {HOST} "docker inspect mycontainer"'), "allow")
-
-    def test_docker_logs(self):
-        self.assertEqual(run(f'ssh {HOST} "docker logs mycontainer"'), "allow")
-
-    def test_docker_stats(self):
-        self.assertEqual(run(f'ssh {HOST} "docker stats --no-stream"'), "allow")
-
-    def test_docker_top(self):
-        self.assertEqual(run(f'ssh {HOST} "docker top mycontainer"'), "allow")
-
-    def test_docker_diff(self):
-        self.assertEqual(run(f'ssh {HOST} "docker diff mycontainer"'), "allow")
-
-    def test_docker_info(self):
-        self.assertEqual(run(f'ssh {HOST} "docker info"'), "allow")
-
-    def test_docker_version(self):
-        self.assertEqual(run(f'ssh {HOST} "docker version"'), "allow")
-
-    def test_docker_system_df(self):
-        self.assertEqual(run(f'ssh {HOST} "docker system df"'), "allow")
-
-    def test_docker_network_ls(self):
-        self.assertEqual(run(f'ssh {HOST} "docker network ls"'), "allow")
-
-    def test_docker_network_inspect(self):
-        self.assertEqual(run(f'ssh {HOST} "docker network inspect mynet"'), "allow")
-
-    def test_docker_volume_ls(self):
-        self.assertEqual(run(f'ssh {HOST} "docker volume ls"'), "allow")
-
-    def test_docker_image_ls(self):
-        self.assertEqual(run(f'ssh {HOST} "docker image ls"'), "allow")
-
-    def test_docker_container_ls(self):
-        self.assertEqual(run(f'ssh {HOST} "docker container ls"'), "allow")
-
-    def test_docker_container_logs(self):
-        self.assertEqual(run(f'ssh {HOST} "docker container logs mycontainer"'), "allow")
-
-    def test_docker_compose_ps(self):
-        self.assertEqual(run(f'ssh {HOST} "docker compose ps"'), "allow")
-
-    def test_docker_compose_logs(self):
-        self.assertEqual(run(f'ssh {HOST} "docker compose logs"'), "allow")
-
-    def test_docker_compose_config(self):
-        self.assertEqual(run(f'ssh {HOST} "docker compose config"'), "allow")
-
-    def test_docker_hyphen_compose_ps(self):
-        self.assertEqual(run(f'ssh {HOST} "docker-compose ps"'), "allow")
-
-    def test_docker_hyphen_compose_logs(self):
-        self.assertEqual(run(f'ssh {HOST} "docker-compose logs myservice"'), "allow")
-
-    def test_sudo_docker_ps(self):
-        self.assertEqual(run(f'ssh {HOST} "sudo docker ps"'), "allow")
+# ── Blocked ──────────────────────────────────────────────────────────────────
 
 
-class TestDockerBlocked(unittest.TestCase):
-    def test_docker_exec(self):
-        self.assertEqual(run(f'ssh {HOST} "docker exec mycontainer sh"'), "ask")
-
-    def test_docker_run(self):
-        self.assertEqual(run(f'ssh {HOST} "docker run nginx"'), "ask")
-
-    def test_docker_rm(self):
-        self.assertEqual(run(f'ssh {HOST} "docker rm mycontainer"'), "ask")
-
-    def test_docker_stop(self):
-        self.assertEqual(run(f'ssh {HOST} "docker stop mycontainer"'), "ask")
-
-    def test_docker_system_prune(self):
-        self.assertEqual(run(f'ssh {HOST} "docker system prune"'), "ask")
-
-    def test_docker_network_connect(self):
-        self.assertEqual(run(f'ssh {HOST} "docker network connect mynet mycontainer"'), "ask")
-
-    def test_docker_image_prune(self):
-        self.assertEqual(run(f'ssh {HOST} "docker image prune"'), "ask")
-
-    def test_docker_hyphen_compose_up(self):
-        self.assertEqual(run(f'ssh {HOST} "docker-compose up"'), "ask")
-
-    def test_docker_compose_down(self):
-        self.assertEqual(run(f'ssh {HOST} "docker compose down"'), "ask")
+@pytest.mark.parametrize(
+    "command",
+    [
+        f'ssh {HOST} "rm /tmp/foo"',
+        f'ssh {HOST} "systemctl restart nginx"',
+        f'ssh {HOST} "grep foo /etc/passwd > /tmp/out"',
+        f'ssh {HOST} "find /tmp -exec rm {{}} \\;"',
+        f"ssh {HOST} \"find /tmp -name '*.tmp' -delete\"",
+        f'ssh {HOST} "ip link set eth0 down"',
+        f'ssh {HOST} "grep foo /etc/passwd | tee /tmp/out"',
+        f"ssh {HOST} \"sed -i 's/foo/bar/' /etc/file\"",
+        f"ssh {HOST} \"sed -i.bak 's/foo/bar/' /etc/file\"",
+        f"ssh {HOST} \"sed -ni 's/foo/bar/' /etc/file\"",
+    ],
+)
+def test_blocked(command: str) -> None:
+    assert decide(command, HOST) == "ask"
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
+# ── Docker approved ───────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        f'ssh {HOST} "docker ps"',
+        f'ssh {HOST} "docker ps -a"',
+        f'ssh {HOST} "docker images"',
+        f'ssh {HOST} "docker inspect mycontainer"',
+        f'ssh {HOST} "docker logs mycontainer"',
+        f'ssh {HOST} "docker stats --no-stream"',
+        f'ssh {HOST} "docker top mycontainer"',
+        f'ssh {HOST} "docker diff mycontainer"',
+        f'ssh {HOST} "docker info"',
+        f'ssh {HOST} "docker version"',
+        f'ssh {HOST} "docker system df"',
+        f'ssh {HOST} "docker network ls"',
+        f'ssh {HOST} "docker network inspect mynet"',
+        f'ssh {HOST} "docker volume ls"',
+        f'ssh {HOST} "docker image ls"',
+        f'ssh {HOST} "docker container ls"',
+        f'ssh {HOST} "docker container logs mycontainer"',
+        f'ssh {HOST} "docker compose ps"',
+        f'ssh {HOST} "docker compose logs"',
+        f'ssh {HOST} "docker compose config"',
+        f'ssh {HOST} "docker-compose ps"',
+        f'ssh {HOST} "docker-compose logs myservice"',
+        f'ssh {HOST} "sudo docker ps"',
+    ],
+)
+def test_docker_approved(command: str) -> None:
+    assert decide(command, HOST) == "allow"
+
+
+# ── Docker blocked ────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        f'ssh {HOST} "docker exec mycontainer sh"',
+        f'ssh {HOST} "docker run nginx"',
+        f'ssh {HOST} "docker rm mycontainer"',
+        f'ssh {HOST} "docker stop mycontainer"',
+        f'ssh {HOST} "docker system prune"',
+        f'ssh {HOST} "docker network connect mynet mycontainer"',
+        f'ssh {HOST} "docker image prune"',
+        f'ssh {HOST} "docker-compose up"',
+        f'ssh {HOST} "docker compose down"',
+    ],
+)
+def test_docker_blocked(command: str) -> None:
+    assert decide(command, HOST) == "ask"
+
+
+# ── Integration ───────────────────────────────────────────────────────────────
+
+
+def test_script_subprocess() -> None:
+    """Verify the script works correctly as a child process (covers argv/stdin/stdout)."""
+    payload = json.dumps({"tool_input": {"command": f'ssh {HOST} "cat /etc/hosts"'}})
+    # B603: args are fully controlled — sys.executable, a trusted local script path, string literal.
+    result = subprocess.run(  # nosec B603
+        [sys.executable, str(_script_path), HOST],
+        input=payload,
+        capture_output=True,
+        text=True,
+    )
+    decision = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"]
+    assert decision == "allow"
