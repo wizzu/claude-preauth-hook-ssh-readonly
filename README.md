@@ -74,23 +74,36 @@ auto-approved.
 
 ## Development
 
-- `READONLY_COMMANDS` and `UNSAFE_PATTERNS` at the top of the script are the
+**First-time setup** (creates `.venv`, installs dev deps, installs git hooks):
+
+```bash
+make install-hooks
+```
+
+**Common tasks:**
+
+```bash
+make check     # all quality checks: lint + test
+make lint      # ruff, bandit, mypy, suppression check
+make format    # reformat code in place
+make test      # run test suite
+```
+
+**Editing the allowlist:**
+
+- `READONLY_COMMANDS` and `UNSAFE_PATTERNS` at the top of `ssh-readonly.py` are the
   only things most changes will touch
 - Each entry is a Python regex — simple command names are plain strings, but
   entries like `systemctl` and `ip` need subcommand matching to avoid
   accidentally allowing write operations
 - The script must stay a single file with no dependencies beyond the standard
   library — it runs in any Python 3 environment without a venv
-- After any change, deploy with:
+
+**Deploying after a change:**
 
 ```bash
+make check
 cp ssh-readonly.py ~/.claude/hooks/ssh-readonly.py
-```
-
-Run the test suite before deploying:
-
-```bash
-python3 test_ssh_readonly.py
 ```
 
 For ad-hoc checks, you can also drive the script directly:

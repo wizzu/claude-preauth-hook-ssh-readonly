@@ -14,7 +14,6 @@ READONLY_COMMANDS = [
     r"tail",
     r"less",
     r"file",
-
     # Directory / file listing
     r"ls",
     r"ll",
@@ -23,11 +22,9 @@ READONLY_COMMANDS = [
     r"stat",
     r"readlink",
     r"realpath",
-
     # Search
     r"grep",
     r"rgrep",
-
     # Disk / filesystem info
     r"df",
     r"du",
@@ -36,7 +33,6 @@ READONLY_COMMANDS = [
     r"findmnt",
     r"fdisk\s+-l",
     r"smartctl\s+-a",
-
     # Process / system info
     r"ps",
     r"lsof",
@@ -45,26 +41,24 @@ READONLY_COMMANDS = [
     r"uptime",
     r"free",
     r"dmesg",
-
     # Network info (read-only subcommands only)
     r"ss",
     r"netstat",
     r"ip\s+(addr|address|link|route|neigh|rule|netns)(\s+(show|list|ls).*)?",
-
     # Service status (not start/stop/restart)
     r"systemctl\s+status",
     r"journalctl",
-
     # Container inspection (read-only subcommands only; exec/run/rm/stop/etc. fall through)
-    (r"docker\s+(ps|images|inspect|logs|stats|history|port|top|diff|info|version"
-     r"|system\s+df"
-     r"|network\s+(ls|list|inspect)"
-     r"|volume\s+(ls|list|inspect)"
-     r"|image\s+(ls|list|inspect|history)"
-     r"|container\s+(ls|list|ps|inspect|logs|top|stats|port|diff)"
-     r"|compose\s+(ps|logs|config|images|top|port))"),
+    (
+        r"docker\s+(ps|images|inspect|logs|stats|history|port|top|diff|info|version"
+        r"|system\s+df"
+        r"|network\s+(ls|list|inspect)"
+        r"|volume\s+(ls|list|inspect)"
+        r"|image\s+(ls|list|inspect|history)"
+        r"|container\s+(ls|list|ps|inspect|logs|top|stats|port|diff)"
+        r"|compose\s+(ps|logs|config|images|top|port))"
+    ),
     r"docker-compose\s+(ps|logs|config|images|top|port)",
-
     # Text processing (used in pipelines)
     r"awk",
     r"sed",
@@ -74,12 +68,10 @@ READONLY_COMMANDS = [
     r"tr",
     r"wc",
     r"diff",
-
     # Checksums
     r"md5sum",
     r"sha1sum",
     r"sha256sum",
-
     # Misc
     r"echo",
     r"pwd",
@@ -100,13 +92,13 @@ READONLY_COMMANDS = [
 # avoid false positives, since words like "set" or "add" appear legitimately
 # in other commands (e.g. grep arguments, awk output).
 UNSAFE_PATTERNS = [
-    r'(?:^|\s)\d*>>?\s',                                   # output redirection (>, >>, 2>, 2>>)
-    r'\s-exec\b',                                          # find -exec
-    r'\s-delete\b',                                        # find -delete
-    r'\s-remove\b',                                        # find -remove
-    r'[|;]\s*tee\b',                                       # tee in a pipeline (always writes)
-    r'\bsed\b.*\s-[a-zA-Z]*i',                            # sed -i / -ni / -i.bak (in-place edit)
-    r'\bip\b.*\s+(set|add|del|delete|flush|change|replace|append)\b',  # ip write operations
+    r"(?:^|\s)\d*>>?\s",  # output redirection (>, >>, 2>, 2>>)
+    r"\s-exec\b",  # find -exec
+    r"\s-delete\b",  # find -delete
+    r"\s-remove\b",  # find -remove
+    r"[|;]\s*tee\b",  # tee in a pipeline (always writes)
+    r"\bsed\b.*\s-[a-zA-Z]*i",  # sed -i / -ni / -i.bak (in-place edit)
+    r"\bip\b.*\s+(set|add|del|delete|flush|change|replace|append)\b",  # ip write operations
 ]
 # --- End config ---
 
@@ -124,7 +116,9 @@ allowed_host = sys.argv[1] if len(sys.argv) > 1 else None
 data = json.load(sys.stdin)
 cmd = data.get("tool_input", {}).get("command", "")
 
-ask = json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask"}})
+ask = json.dumps(
+    {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask"}}
+)
 
 if not allowed_host:
     sys.exit(0)  # No configured host — defer to Claude Code's default permissions
@@ -145,9 +139,17 @@ if host != allowed_host:
     sys.exit(0)  # SSH to a different host — defer to Claude Code's default permissions
 
 if readonly_re.match(inner) and not unsafe_re.search(inner):
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
-        "permissionDecision": "allow",
-        "permissionDecisionReason": f"Read-only ssh {host} command auto-approved"}}))
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                    "permissionDecisionReason": f"Read-only ssh {host} command auto-approved",
+                }
+            }
+        )
+    )
 else:
     print(ask)
 

@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """Basic smoke tests for ssh-readonly.py.
 
-Run with:  python3 test_ssh_readonly.py
+Run with:  make test
 """
+
 import json
-import subprocess
+
+# B404: test harness intentionally uses subprocess to invoke the hook script as a child process.
+import subprocess  # nosec B404
 import sys
 import unittest
+from pathlib import Path
 
-SCRIPT = "ssh-readonly.py"
+SCRIPT = str(Path(__file__).parent.parent / "ssh-readonly.py")
 HOST = "prod-server"
 
 
@@ -22,7 +26,8 @@ def run(command: str, host: str | None = HOST) -> str | None:
     args = [sys.executable, SCRIPT]
     if host is not None:
         args.append(host)
-    result = subprocess.run(args, input=payload, capture_output=True, text=True)
+    # B603: args are fully controlled — sys.executable, a trusted script path, and a string literal.
+    result = subprocess.run(args, input=payload, capture_output=True, text=True)  # nosec B603
     if not result.stdout.strip():
         return None
     return json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"]
@@ -36,7 +41,7 @@ class TestApproved(unittest.TestCase):
         self.assertEqual(run(f'ssh {HOST} "cat /etc/hosts"'), "allow")
 
     def test_find_safe(self):
-        self.assertEqual(run(f'ssh {HOST} "find /var -name \'*.log\'"'), "allow")
+        self.assertEqual(run(f"ssh {HOST} \"find /var -name '*.log'\""), "allow")
 
     def test_systemctl_status(self):
         self.assertEqual(run(f'ssh {HOST} "systemctl status nginx"'), "allow")
@@ -48,7 +53,7 @@ class TestApproved(unittest.TestCase):
         self.assertEqual(run(f'ssh {HOST} "grep error /var/log/syslog | wc -l"'), "allow")
 
     def test_sed_filter(self):
-        self.assertEqual(run(f'ssh {HOST} "grep foo /etc/file | sed \'s/foo/bar/\'"'), "allow")
+        self.assertEqual(run(f"ssh {HOST} \"grep foo /etc/file | sed 's/foo/bar/'\""), "allow")
 
 
 class TestDeferred(unittest.TestCase):
@@ -58,16 +63,16 @@ class TestDeferred(unittest.TestCase):
         self.assertIsNone(run(f'ssh {HOST} "grep foo /etc/passwd"', host=None))
 
     def test_wrong_host(self):
-        self.assertIsNone(run(f'ssh other "grep foo /etc/passwd"'))
+        self.assertIsNone(run('ssh other "grep foo /etc/passwd"'))
 
     def test_not_ssh(self):
-        self.assertIsNone(run('grep foo /etc/passwd'))
+        self.assertIsNone(run("grep foo /etc/passwd"))
 
     def test_local_du(self):
-        self.assertIsNone(run('du -sh /some/local/path'))
+        self.assertIsNone(run("du -sh /some/local/path"))
 
     def test_local_ls(self):
-        self.assertIsNone(run('ls -la /tmp'))
+        self.assertIsNone(run("ls -la /tmp"))
 
 
 class TestBlocked(unittest.TestCase):
@@ -84,7 +89,7 @@ class TestBlocked(unittest.TestCase):
         self.assertEqual(run(f'ssh {HOST} "find /tmp -exec rm {{}} \\;"'), "ask")
 
     def test_find_delete(self):
-        self.assertEqual(run(f'ssh {HOST} "find /tmp -name \'*.tmp\' -delete"'), "ask")
+        self.assertEqual(run(f"ssh {HOST} \"find /tmp -name '*.tmp' -delete\""), "ask")
 
     def test_ip_link_set(self):
         self.assertEqual(run(f'ssh {HOST} "ip link set eth0 down"'), "ask")
@@ -93,13 +98,13 @@ class TestBlocked(unittest.TestCase):
         self.assertEqual(run(f'ssh {HOST} "grep foo /etc/passwd | tee /tmp/out"'), "ask")
 
     def test_sed_inplace(self):
-        self.assertEqual(run(f'ssh {HOST} "sed -i \'s/foo/bar/\' /etc/file"'), "ask")
+        self.assertEqual(run(f"ssh {HOST} \"sed -i 's/foo/bar/' /etc/file\""), "ask")
 
     def test_sed_inplace_bak(self):
-        self.assertEqual(run(f'ssh {HOST} "sed -i.bak \'s/foo/bar/\' /etc/file"'), "ask")
+        self.assertEqual(run(f"ssh {HOST} \"sed -i.bak 's/foo/bar/' /etc/file\""), "ask")
 
     def test_sed_inplace_combined_flag(self):
-        self.assertEqual(run(f'ssh {HOST} "sed -ni \'s/foo/bar/\' /etc/file"'), "ask")
+        self.assertEqual(run(f"ssh {HOST} \"sed -ni 's/foo/bar/' /etc/file\""), "ask")
 
 
 class TestDockerApproved(unittest.TestCase):
