@@ -33,6 +33,8 @@ HOST = "prod-server"
         f"ssh {HOST} \"find /var -name '*.log'\"",
         f'ssh {HOST} "systemctl status nginx"',
         f'ssh {HOST} "sudo cat /etc/shadow"',
+        f'ssh {HOST} "sudo -i cat /etc/shadow"',
+        f'ssh {HOST} "sudo -i ls -la /some/path"',
         f'ssh {HOST} "grep error /var/log/syslog | wc -l"',
         f"ssh {HOST} \"grep foo /etc/file | sed 's/foo/bar/'\"",
     ],

@@ -104,7 +104,7 @@ UNSAFE_PATTERNS = [
 
 # Build combined pattern from the list above
 _combined = "|".join(f"(?:{p})" for p in READONLY_COMMANDS)
-readonly_re = re.compile(rf"^(sudo\s+)?({_combined})\b", re.DOTALL)
+readonly_re = re.compile(rf"^(sudo(\s+-\S+)*\s+)?({_combined})\b", re.DOTALL)
 
 _unsafe_combined = "|".join(f"(?:{p})" for p in UNSAFE_PATTERNS)
 unsafe_re = re.compile(_unsafe_combined, re.DOTALL)
@@ -143,6 +143,8 @@ def main() -> None:
     data = json.load(sys.stdin)
     cmd = data.get("tool_input", {}).get("command", "")
 
+    result = decide(cmd, allowed_host)
+
     _debug_log = os.path.expanduser("~/.claude/hooks/ssh-readonly-debug.log")
     if os.path.exists(_debug_log):
         m = re.match(r'^ssh\s+(\S+)\s+(?:"(.+)"|\'(.+)\'|(.+))$', cmd, re.DOTALL)
@@ -150,9 +152,7 @@ def main() -> None:
             host = m.group(1)
             inner = (m.group(2) or m.group(3) or m.group(4)).strip()
             with open(_debug_log, "a") as f:
-                f.write(f"cmd={cmd!r}\nhost={host!r}\ninner={inner!r}\n---\n")
-
-    result = decide(cmd, allowed_host)
+                f.write(f"cmd={cmd!r}\nhost={host!r}\ninner={inner!r}\ndecision={result!r}\n---\n")
 
     if result is None:
         sys.exit(0)  # Defer to Claude Code's default permissions
