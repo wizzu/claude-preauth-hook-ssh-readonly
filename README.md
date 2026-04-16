@@ -1,10 +1,9 @@
 ## Installation
 
-Copy (or symlink) the script to `~/.claude/hooks/`:
-
 ```bash
-cp ssh-readonly.py ~/.claude/hooks/ssh-readonly.py
-chmod +x ~/.claude/hooks/ssh-readonly.py
+make install
+# equivalent to: cp ssh-readonly.py ~/.claude/hooks/ssh-readonly.py
+# (make install preserves the executable bit via cp -a; if copying manually, add chmod +x)
 ```
 
 ## Per-project setup
@@ -103,7 +102,8 @@ make test      # run test suite
 
 ```bash
 make check
-cp ssh-readonly.py ~/.claude/hooks/ssh-readonly.py
+make install
+# equivalent to: cp ssh-readonly.py ~/.claude/hooks/ssh-readonly.py
 ```
 
 For ad-hoc checks, you can also drive the script directly:

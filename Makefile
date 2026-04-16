@@ -2,7 +2,12 @@ SRC = ssh-readonly.py
 TESTS = tests
 TOOLS = tools
 
-.PHONY: check lint format test setup install-hooks pre-commit-hook clean distclean
+.PHONY: check lint format test setup install install-hooks pre-commit-hook clean distclean
+
+# Install the hook script to ~/.claude/hooks/
+install:
+	mkdir -p ~/.claude/hooks
+	cp -a $(SRC) ~/.claude/hooks/$(SRC)
 
 # Set up the dev environment (creates/updates venv and installs all dev deps)
 setup:
