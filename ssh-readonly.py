@@ -59,6 +59,16 @@ READONLY_COMMANDS = [
         r"|compose\s+(ps|logs|config|images|top|port))"
     ),
     r"docker-compose\s+(ps|logs|config|images|top|port)",
+    # Git inspection (read-only subcommands only; branch/tag/remote/commit/push etc. fall through)
+    # Handles git-level flags before the subcommand (e.g. git -C /path log, git --no-pager diff)
+    # Excludes branch/tag/remote/config: those have write forms that share the same subcommand name
+    (
+        r"git(\s+(-C\s+\S+|--git-dir=\S+|--work-tree=\S+|--no-pager|-p|--paginate))*\s+"
+        r"(status|log|diff|show|blame|shortlog|describe"
+        r"|ls-files|ls-tree|cat-file|grep"
+        r"|rev-parse|rev-list|for-each-ref"
+        r"|stash\s+list)"
+    ),
     # Text processing (used in pipelines)
     r"awk",
     r"sed",

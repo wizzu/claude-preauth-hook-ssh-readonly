@@ -82,6 +82,50 @@ def test_blocked(command: str) -> None:
     assert decide(command, HOST) == "ask"
 
 
+# ── Git approved ─────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        f'ssh {HOST} "git status"',
+        f'ssh {HOST} "git log --oneline -5"',
+        f'ssh {HOST} "git diff HEAD~1"',
+        f'ssh {HOST} "git show HEAD"',
+        f'ssh {HOST} "git blame src/main.py"',
+        f'ssh {HOST} "git -C /some/path status"',
+        f'ssh {HOST} "git -C /some/path log --oneline -5"',
+        f'ssh {HOST} "git --no-pager diff"',
+        f'ssh {HOST} "git stash list"',
+        f'ssh {HOST} "sudo git status"',
+        f'ssh {HOST} "sudo -i git -C /some/path status"',
+        f'ssh {HOST} "sudo -i git -C /some/path log --oneline -5"',
+    ],
+)
+def test_git_approved(command: str) -> None:
+    assert decide(command, HOST) == "allow"
+
+
+# ── Git blocked ───────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        f'ssh {HOST} "git commit -m msg"',
+        f'ssh {HOST} "git push"',
+        f'ssh {HOST} "git pull"',
+        f'ssh {HOST} "git checkout main"',
+        f'ssh {HOST} "git branch -d old-branch"',
+        f'ssh {HOST} "git stash"',
+        f'ssh {HOST} "git stash pop"',
+        f'ssh {HOST} "git remote add origin url"',
+    ],
+)
+def test_git_blocked(command: str) -> None:
+    assert decide(command, HOST) == "ask"
+
+
 # ── Docker approved ───────────────────────────────────────────────────────────
 
 
