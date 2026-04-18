@@ -38,8 +38,9 @@ any other host falls through to the prompt.
 Two lists at the top of `ssh-readonly.py` control what gets auto-approved.
 
 **`READONLY_COMMANDS`** — patterns matched against the start of the inner
-command (after stripping an optional leading `sudo`). Simple commands are plain
-strings; commands where only specific subcommands or flags are safe use a regex:
+command (after stripping an optional leading `sudo`, including flags like
+`sudo -i`). Simple commands are plain strings; commands where only specific
+subcommands or flags are safe use a regex:
 
 ```python
 READONLY_COMMANDS = [
@@ -67,9 +68,9 @@ exists. To enable:
 touch ~/.claude/hooks/ssh-readonly-debug.log
 ```
 
-To disable, delete the file. The log records `cmd`, `host`, and `inner` for
-each invocation, which is enough to diagnose why a command was or wasn't
-auto-approved.
+To disable, delete the file. The log records `cmd`, `host`, `inner`,
+`trailing`, and `decision` for each invocation, which is enough to diagnose
+why a command was or wasn't auto-approved.
 
 ## Development
 
