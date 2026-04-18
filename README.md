@@ -61,11 +61,11 @@ output redirection, `find -exec`/`-delete`, `sed -i`, `tee` in pipelines, and
 
 ## Debugging
 
-The script logs to `~/.claude/hooks/ssh-readonly-debug.log` when that file
-exists. To enable:
+The script logs to `ssh-readonly-debug.log` in the same directory as the
+script when that file exists. To enable:
 
 ```bash
-touch ~/.claude/hooks/ssh-readonly-debug.log
+touch /path/to/ssh-readonly-debug.log
 ```
 
 To disable, delete the file. The log records `cmd`, `host`, `inner`,

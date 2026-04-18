@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 import json
-import os
 import re
 import sys
+from pathlib import Path
+
+# Debug log: next to the script when run as a file; cwd fallback when piped to the interpreter.
+_script_dir = Path(__file__).parent if "__file__" in dir() else Path()
+_DEBUG_LOG = _script_dir / "ssh-readonly-debug.log"
 
 # --- Config: read-only command patterns ---
 # Each entry is a regex matched against the inner SSH command (after optional "sudo ").
@@ -216,12 +220,11 @@ def main() -> None:
 
     result = decide(cmd, allowed_host)
 
-    _debug_log = os.path.expanduser("~/.claude/hooks/ssh-readonly-debug.log")
-    if os.path.exists(_debug_log):
+    if _DEBUG_LOG.exists():
         parsed = _parse_ssh(cmd)
         if parsed:
             host, inner, trailing = parsed
-            with open(_debug_log, "a") as f:
+            with open(_DEBUG_LOG, "a") as f:
                 f.write(
                     f"cmd={cmd!r}\nhost={host!r}\ninner={inner!r}\n"
                     f"trailing={trailing!r}\ndecision={result!r}\n---\n"

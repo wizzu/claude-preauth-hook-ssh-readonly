@@ -7,7 +7,7 @@ permission system.
 
 To diagnose a specific command:
 - Test directly: `echo '{"tool_input": {"command": "ssh host \"cmd\""}}' | python3 ssh-readonly.py host`
-- For live traffic, enable the debug log first: `touch ~/.claude/hooks/ssh-readonly-debug.log`
+- For live traffic, enable the debug log first: `touch ~/.claude/hooks/ssh-readonly-debug.log` (next to the installed script)
 
 ## Privacy
 
