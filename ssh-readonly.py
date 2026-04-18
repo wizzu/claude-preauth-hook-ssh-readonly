@@ -119,15 +119,45 @@ readonly_re = re.compile(rf"^(sudo(\s+-\S+)*\s+)?({_combined})\b", re.DOTALL)
 _unsafe_combined = "|".join(f"(?:{p})" for p in UNSAFE_PATTERNS)
 unsafe_re = re.compile(_unsafe_combined, re.DOTALL)
 
-# Parses: ssh <host> "<cmd>"[trailing]  or  ssh <host> '<cmd>'[trailing]  or  ssh <host> <cmd>
-# Trailing content after the closing quote is captured separately so it can be inspected.
-# Groups: 1=host, 2=dq-inner, 3=dq-trailing, 4=sq-inner, 5=sq-trailing, 6=unquoted
-_SSH_RE = re.compile(r'^ssh\s+(\S+)\s+(?:"(.+?)"(\s.*)?|\'(.+?)\'(\s.*)?|(.+))$', re.DOTALL)
+# Matches three forms of SSH command. The dq_*/sq_* group name pairs exist only because
+# Python's re module disallows reusing named groups within the same pattern; the quote
+# style carries no semantic meaning for this hook. Use _parse_ssh() instead of accessing
+# these groups directly.
+#   host        — the SSH host/alias
+#   dq_inner    — inner command (double-quoted form)
+#   dq_trailing — shell tokens after closing " (double-quoted form)
+#   sq_inner    — inner command (single-quoted form)
+#   sq_trailing — shell tokens after closing ' (single-quoted form)
+#   uq          — entire remainder (unquoted form; no quote boundary to split trailing from inner)
+_SSH_RE = re.compile(
+    r"^ssh\s+(?P<host>\S+)\s+"
+    r'(?:"(?P<dq_inner>.+?)"(?P<dq_trailing>\s.*)?'
+    r"|'(?P<sq_inner>.+?)'(?P<sq_trailing>\s.*)?"
+    r"|(?P<uq>.+))$",
+    re.DOTALL,
+)
 
 # Trailing shell tokens that are safe to ignore: pure fd/devnull redirections that apply to the
 # ssh process itself (e.g. 2>/dev/null, 2>&1). Anything else (pipes, output to real files, extra
 # commands) is outside the hook's scope — defer to Claude Code rather than deciding either way.
 _BENIGN_TRAILING_RE = re.compile(r"^\s*(\d*>>?(&\d+|/dev/null)\s*)+$")
+
+
+def _parse_ssh(command: str) -> tuple[str, str, str | None] | None:
+    """Parse an SSH command into (host, inner_cmd, trailing), or None if not a recognised form.
+
+    inner_cmd is the command to be executed on the remote host.
+    trailing is any shell tokens after the closing quote (e.g. '2>/dev/null'), or None.
+    """
+    m = _SSH_RE.match(command)
+    if not m:
+        return None
+    host = m.group("host")
+    if m.group("dq_inner") is not None:
+        return host, m.group("dq_inner").strip(), m.group("dq_trailing")
+    if m.group("sq_inner") is not None:
+        return host, m.group("sq_inner").strip(), m.group("sq_trailing")
+    return host, m.group("uq").strip(), None
 
 
 def decide(command: str, allowed_host: str | None) -> str | None:
@@ -143,17 +173,11 @@ def decide(command: str, allowed_host: str | None) -> str | None:
     if not allowed_host:
         return None
 
-    m = _SSH_RE.match(command)
-    if not m:
+    parsed = _parse_ssh(command)
+    if not parsed:
         return None
 
-    host = m.group(1)
-    if m.group(2) is not None:
-        inner, trailing = m.group(2).strip(), m.group(3)
-    elif m.group(4) is not None:
-        inner, trailing = m.group(4).strip(), m.group(5)
-    else:
-        inner, trailing = m.group(6).strip(), None
+    host, inner, trailing = parsed
 
     if host != allowed_host:
         return None
@@ -176,15 +200,9 @@ def main() -> None:
 
     _debug_log = os.path.expanduser("~/.claude/hooks/ssh-readonly-debug.log")
     if os.path.exists(_debug_log):
-        m = _SSH_RE.match(cmd)
-        if m:
-            host = m.group(1)
-            if m.group(2) is not None:
-                inner, trailing = m.group(2).strip(), m.group(3)
-            elif m.group(4) is not None:
-                inner, trailing = m.group(4).strip(), m.group(5)
-            else:
-                inner, trailing = m.group(6).strip(), None
+        parsed = _parse_ssh(cmd)
+        if parsed:
+            host, inner, trailing = parsed
             with open(_debug_log, "a") as f:
                 f.write(
                     f"cmd={cmd!r}\nhost={host!r}\ninner={inner!r}\n"

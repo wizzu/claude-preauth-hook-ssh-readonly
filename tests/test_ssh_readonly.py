@@ -18,8 +18,34 @@ assert _spec is not None and _spec.loader is not None
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)  # type: ignore[union-attr]
 decide = _mod.decide
+_parse_ssh = _mod._parse_ssh
 
 HOST = "prod-server"
+
+
+# ── _parse_ssh ────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "command,expected",
+    [
+        # Double-quoted, no trailing
+        (f'ssh {HOST} "cat /etc/hosts"', (HOST, "cat /etc/hosts", None)),
+        # Double-quoted, benign trailing
+        (f'ssh {HOST} "ls /path" 2>/dev/null', (HOST, "ls /path", " 2>/dev/null")),
+        # Single-quoted, no trailing
+        (f"ssh {HOST} 'cat /etc/hosts'", (HOST, "cat /etc/hosts", None)),
+        # Single-quoted, benign trailing
+        (f"ssh {HOST} 'ls /path' 2>/dev/null", (HOST, "ls /path", " 2>/dev/null")),
+        # Unquoted
+        (f"ssh {HOST} cat /etc/hosts", (HOST, "cat /etc/hosts", None)),
+        # Not SSH — returns None
+        ("cat /etc/hosts", None),
+        ("grep foo /etc/passwd", None),
+    ],
+)
+def test_parse_ssh(command: str, expected: tuple | None) -> None:
+    assert _parse_ssh(command) == expected
 
 
 # ── Approved ─────────────────────────────────────────────────────────────────
