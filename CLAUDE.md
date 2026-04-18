@@ -9,6 +9,17 @@ To diagnose a specific command:
 - Test directly: `echo '{"tool_input": {"command": "ssh host \"cmd\""}}' | python3 ssh-readonly.py host`
 - For live traffic, enable the debug log first: `touch ~/.claude/hooks/ssh-readonly-debug.log` (next to the installed script)
 
+## Development
+
+Prefer `make` targets over invoking tools directly:
+- `make check` — lint + full test suite (run before committing)
+- `make format` — auto-format source
+- `make test` — full test suite
+- `make test PYTEST_ARGS="-k test_debug"` — pytest keyword filter
+- `make test PYTEST_ARGS="tests/test_ssh_readonly.py::test_name"` — single test
+
+Invoke pytest directly only when you need options that `make test PYTEST_ARGS=...` doesn't cover (e.g. `-s` to see print output while iterating).
+
 ## Privacy
 
 This repo is intended to be shareable as a public project. Do not reference

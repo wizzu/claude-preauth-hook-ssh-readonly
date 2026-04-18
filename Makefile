@@ -37,10 +37,13 @@ format:
 	@echo "==> format"
 	uv run ruff format $(SRC) $(TESTS)
 
-# Test: run test suite
+# Test: run test suite. Pass PYTEST_ARGS to forward options/filters to pytest.
+#   make test                          — full suite
+#   make test PYTEST_ARGS="-k test_debug"     — keyword filter
+#   make test PYTEST_ARGS="tests/test_ssh_readonly.py::test_debug_log_written_when_present"
 test:
 	@echo "==> test"
-	uv run --extra dev pytest $(TESTS)
+	uv run --extra dev pytest $(TESTS) $(PYTEST_ARGS)
 
 # Remove caches and coverage artifacts
 clean:
