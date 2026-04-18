@@ -119,6 +119,16 @@ readonly_re = re.compile(rf"^(sudo(\s+-\S+)*\s+)?({_combined})\b", re.DOTALL)
 _unsafe_combined = "|".join(f"(?:{p})" for p in UNSAFE_PATTERNS)
 unsafe_re = re.compile(_unsafe_combined, re.DOTALL)
 
+# Parses: ssh <host> "<cmd>"[trailing]  or  ssh <host> '<cmd>'[trailing]  or  ssh <host> <cmd>
+# Trailing content after the closing quote is captured separately so it can be inspected.
+# Groups: 1=host, 2=dq-inner, 3=dq-trailing, 4=sq-inner, 5=sq-trailing, 6=unquoted
+_SSH_RE = re.compile(r'^ssh\s+(\S+)\s+(?:"(.+?)"(\s.*)?|\'(.+?)\'(\s.*)?|(.+))$', re.DOTALL)
+
+# Trailing shell tokens that are safe to ignore: pure fd/devnull redirections that apply to the
+# ssh process itself (e.g. 2>/dev/null, 2>&1). Anything else (pipes, output to real files, extra
+# commands) is outside the hook's scope — defer to Claude Code rather than deciding either way.
+_BENIGN_TRAILING_RE = re.compile(r"^\s*(\d*>>?(&\d+|/dev/null)\s*)+$")
+
 
 def decide(command: str, allowed_host: str | None) -> str | None:
     """Classify an SSH command for the pre-tool-use hook.
@@ -126,21 +136,30 @@ def decide(command: str, allowed_host: str | None) -> str | None:
     Returns:
         "allow"  — read-only command on the configured host; auto-approve.
         "ask"    — potentially destructive command on the configured host; block.
-        None     — outside the hook's scope (no host configured, wrong host, not SSH);
+        None     — outside the hook's scope (no host configured, wrong host, not SSH,
+                   or has trailing shell tokens beyond benign fd redirections);
                    defer to Claude Code's default permissions.
     """
     if not allowed_host:
         return None
 
-    m = re.match(r'^ssh\s+(\S+)\s+(?:"(.+)"|\'(.+)\'|(.+))$', command, re.DOTALL)
+    m = _SSH_RE.match(command)
     if not m:
         return None
 
     host = m.group(1)
-    inner = (m.group(2) or m.group(3) or m.group(4)).strip()
+    if m.group(2) is not None:
+        inner, trailing = m.group(2).strip(), m.group(3)
+    elif m.group(4) is not None:
+        inner, trailing = m.group(4).strip(), m.group(5)
+    else:
+        inner, trailing = m.group(6).strip(), None
 
     if host != allowed_host:
         return None
+
+    if trailing and not _BENIGN_TRAILING_RE.match(trailing):
+        return None  # trailing shell action — not our call; defer
 
     if readonly_re.match(inner) and not unsafe_re.search(inner):
         return "allow"
@@ -157,12 +176,20 @@ def main() -> None:
 
     _debug_log = os.path.expanduser("~/.claude/hooks/ssh-readonly-debug.log")
     if os.path.exists(_debug_log):
-        m = re.match(r'^ssh\s+(\S+)\s+(?:"(.+)"|\'(.+)\'|(.+))$', cmd, re.DOTALL)
+        m = _SSH_RE.match(cmd)
         if m:
             host = m.group(1)
-            inner = (m.group(2) or m.group(3) or m.group(4)).strip()
+            if m.group(2) is not None:
+                inner, trailing = m.group(2).strip(), m.group(3)
+            elif m.group(4) is not None:
+                inner, trailing = m.group(4).strip(), m.group(5)
+            else:
+                inner, trailing = m.group(6).strip(), None
             with open(_debug_log, "a") as f:
-                f.write(f"cmd={cmd!r}\nhost={host!r}\ninner={inner!r}\ndecision={result!r}\n---\n")
+                f.write(
+                    f"cmd={cmd!r}\nhost={host!r}\ninner={inner!r}\n"
+                    f"trailing={trailing!r}\ndecision={result!r}\n---\n"
+                )
 
     if result is None:
         sys.exit(0)  # Defer to Claude Code's default permissions

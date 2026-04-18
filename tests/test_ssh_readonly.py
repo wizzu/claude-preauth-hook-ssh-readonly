@@ -37,6 +37,11 @@ HOST = "prod-server"
         f'ssh {HOST} "sudo -i ls -la /some/path"',
         f'ssh {HOST} "grep error /var/log/syslog | wc -l"',
         f"ssh {HOST} \"grep foo /etc/file | sed 's/foo/bar/'\"",
+        # Benign shell-level fd redirections after the closing quote are ignored
+        f'ssh {HOST} "ls /some/path" 2>/dev/null',
+        f'ssh {HOST} "cat /etc/hosts" 2>/dev/null',
+        f'ssh {HOST} "cat /etc/hosts" 2>&1',
+        f'ssh {HOST} "cat /etc/hosts" >/dev/null 2>&1',
     ],
 )
 def test_approved(command: str) -> None:
@@ -50,6 +55,10 @@ def test_approved(command: str) -> None:
     "command,host",
     [
         (f'ssh {HOST} "grep foo /etc/passwd"', None),  # no host configured
+        # Non-benign trailing shell actions — outside the hook's scope; defer rather than deciding
+        (f'ssh {HOST} "cat /etc/passwd" > /tmp/out', HOST),
+        (f'ssh {HOST} "cat /etc/passwd" | grep root', HOST),
+        (f'ssh {HOST} "cat /etc/passwd" && echo done', HOST),
         ('ssh other "grep foo /etc/passwd"', HOST),  # wrong host
         ("grep foo /etc/passwd", HOST),  # not SSH
         ("du -sh /some/local/path", HOST),  # local command
