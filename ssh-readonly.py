@@ -119,6 +119,24 @@ readonly_re = re.compile(rf"^(sudo(\s+-\S+)*\s+)?({_combined})\b", re.DOTALL)
 _unsafe_combined = "|".join(f"(?:{p})" for p in UNSAFE_PATTERNS)
 unsafe_re = re.compile(_unsafe_combined, re.DOTALL)
 
+# SSH flag letters that stand alone (no argument token follows).
+# Source: ssh(1) — options listed without a value in their synopsis.
+_SSH_NO_ARG_FLAGS = "46AaCfGgKkMNnqsTtVvXxYy"
+
+# SSH flag letters that consume the next token as their argument.
+# Source: ssh(1) — options listed with a value in their synopsis.
+_SSH_WITH_ARG_FLAGS = "bcDEeFiJLlmopQRSwW"
+
+# One SSH flag token: either a standalone cluster (last char takes no arg),
+# or a cluster whose last char takes the next whitespace-separated token as its value.
+# Examples: -t  -tvq  -i keyfile  -tvi keyfile  -p 2222
+_SSH_FLAG = (
+    rf"(?:-[A-Za-z0-9]*[{_SSH_NO_ARG_FLAGS}]"
+    rf"|-[A-Za-z0-9]*[{_SSH_WITH_ARG_FLAGS}]\s+\S+)"
+)
+# Zero or more flag tokens (each separated by whitespace), plus optional '--' end-of-options.
+_SSH_FLAGS_PREFIX = rf"(?:{_SSH_FLAG}\s+)*(?:--\s+)?"
+
 # Matches three forms of SSH command. The dq_*/sq_* group name pairs exist only because
 # Python's re module disallows reusing named groups within the same pattern; the quote
 # style carries no semantic meaning for this hook. Use _parse_ssh() instead of accessing
@@ -130,7 +148,7 @@ unsafe_re = re.compile(_unsafe_combined, re.DOTALL)
 #   sq_trailing — shell tokens after closing ' (single-quoted form)
 #   uq          — entire remainder (unquoted form; no quote boundary to split trailing from inner)
 _SSH_RE = re.compile(
-    r"^ssh\s+(?P<host>\S+)\s+"
+    rf"^ssh\s+{_SSH_FLAGS_PREFIX}(?P<host>\S+)\s+"
     r'(?:"(?P<dq_inner>.+?)"(?P<dq_trailing>\s.*)?'
     r"|'(?P<sq_inner>.+?)'(?P<sq_trailing>\s.*)?"
     r"|(?P<uq>.+))$",

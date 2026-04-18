@@ -39,6 +39,20 @@ HOST = "prod-server"
         (f"ssh {HOST} 'ls /path' 2>/dev/null", (HOST, "ls /path", " 2>/dev/null")),
         # Unquoted
         (f"ssh {HOST} cat /etc/hosts", (HOST, "cat /etc/hosts", None)),
+        # Single no-arg flag (-t allocates a pseudo-TTY, takes no argument)
+        (f'ssh -t {HOST} "cat /etc/hosts"', (HOST, "cat /etc/hosts", None)),
+        # Multiple no-arg flags as separate tokens
+        (f'ssh -t -q {HOST} "cat /etc/hosts"', (HOST, "cat /etc/hosts", None)),
+        # Combined no-arg flags in one token
+        (f'ssh -tq {HOST} "cat /etc/hosts"', (HOST, "cat /etc/hosts", None)),
+        # With-arg flag: -i consumes the next token (identity file)
+        (f'ssh -i /path/to/key {HOST} "cat /etc/hosts"', (HOST, "cat /etc/hosts", None)),
+        # Mixed: no-arg flag followed by with-arg flag
+        (f'ssh -t -i /path/to/key {HOST} "cat /etc/hosts"', (HOST, "cat /etc/hosts", None)),
+        # Mixed: with-arg flag in the middle, no-arg flag after it
+        (f'ssh -v -i /path/to/key -q {HOST} "cat /etc/hosts"', (HOST, "cat /etc/hosts", None)),
+        # End-of-options marker (--)
+        (f'ssh -- {HOST} "cat /etc/hosts"', (HOST, "cat /etc/hosts", None)),
         # Not SSH — returns None
         ("cat /etc/hosts", None),
         ("grep foo /etc/passwd", None),
@@ -63,6 +77,10 @@ def test_parse_ssh(command: str, expected: tuple | None) -> None:
         f'ssh {HOST} "sudo -i ls -la /some/path"',
         f'ssh {HOST} "grep error /var/log/syslog | wc -l"',
         f"ssh {HOST} \"grep foo /etc/file | sed 's/foo/bar/'\"",
+        # SSH flags before the host must be skipped, not confused with the hostname
+        f'ssh -t {HOST} "cat /etc/hosts"',
+        f'ssh -t {HOST} "sudo -i cat /etc/hosts"',
+        f"ssh -t {HOST} \"sudo -i cat /etc/hosts 2>/dev/null || echo '(not found)'\"",
         # Benign shell-level fd redirections after the closing quote are ignored
         f'ssh {HOST} "ls /some/path" 2>/dev/null',
         f'ssh {HOST} "cat /etc/hosts" 2>/dev/null',
