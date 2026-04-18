@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Tests for ssh-readonly.py."""
 
+import contextlib
 import importlib.util
+import io
 import json
 
 # B404: needed for the single subprocess integration test (verifies the script as a child process).
@@ -233,6 +235,47 @@ def test_docker_approved(command: str) -> None:
 )
 def test_docker_blocked(command: str) -> None:
     assert decide(command, HOST) == "ask"
+
+
+# ── Debug log ─────────────────────────────────────────────────────────────────
+
+
+def test_debug_log_path_is_next_to_script() -> None:
+    """_DEBUG_LOG must resolve to the same directory as the script itself."""
+    assert _mod._DEBUG_LOG == _script_path.parent / "ssh-readonly-debug.log"
+
+
+def _run_main(monkeypatch: pytest.MonkeyPatch, cmd: str, log_path: Path) -> None:
+    """Call main() with a controlled _DEBUG_LOG, stdin, and argv; swallow sys.exit."""
+    payload = json.dumps({"tool_input": {"command": cmd}})
+    monkeypatch.setattr(_mod, "_DEBUG_LOG", log_path)
+    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(payload.encode())))
+    monkeypatch.setattr("sys.argv", ["ssh-readonly.py", HOST])
+    with contextlib.suppress(SystemExit):
+        _mod.main()
+
+
+def test_debug_log_not_written_when_absent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No log file is created when the sentinel file does not exist."""
+    log_path = tmp_path / "ssh-readonly-debug.log"
+    _run_main(monkeypatch, f'ssh {HOST} "cat /etc/hosts"', log_path)
+    assert not log_path.exists()
+
+
+def test_debug_log_written_when_present(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """When the sentinel file exists, each invocation appends a structured entry."""
+    log_path = tmp_path / "ssh-readonly-debug.log"
+    log_path.touch()
+
+    cmd = f'ssh {HOST} "cat /etc/hosts"'
+    _run_main(monkeypatch, cmd, log_path)
+
+    content = log_path.read_text()
+    assert f"cmd={cmd!r}" in content
+    assert f"host={HOST!r}" in content
+    assert "inner='cat /etc/hosts'" in content
+    assert "decision='allow'" in content
+    assert content.endswith("---\n")
 
 
 # ── Integration ───────────────────────────────────────────────────────────────
