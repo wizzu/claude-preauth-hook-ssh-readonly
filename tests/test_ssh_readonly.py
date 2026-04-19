@@ -21,6 +21,7 @@ _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)  # type: ignore[union-attr]
 decide = _mod.decide
 _parse_ssh = _mod._parse_ssh
+_split_commands = _mod._split_commands
 
 HOST = "prod-server"
 
@@ -237,47 +238,111 @@ def test_docker_blocked(command: str) -> None:
     assert decide(command, HOST) == "ask"
 
 
-# ── Multi-line ────────────────────────────────────────────────────────────────
+# ── _split_commands ───────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "command, expected",
+    [
+        # Newline split
+        ("cmd1\ncmd2", ["cmd1", "cmd2"]),
+        # Blank lines are skipped
+        ("cmd1\n\ncmd2", ["cmd1", "cmd2"]),
+        # && split
+        ("cmd1 && cmd2", ["cmd1", "cmd2"]),
+        # || split
+        ("cmd1 || cmd2", ["cmd1", "cmd2"]),
+        # ; split
+        ("cmd1; cmd2", ["cmd1", "cmd2"]),
+        # Mixed operators
+        ("cmd1 && cmd2; cmd3 || cmd4", ["cmd1", "cmd2", "cmd3", "cmd4"]),
+        # Operator inside double-quoted string — not a split point
+        ('ssh host "cat f || echo x"', ['ssh host "cat f || echo x"']),
+        ('ssh host "cmd && other"', ['ssh host "cmd && other"']),
+        ('ssh host "a; b"', ['ssh host "a; b"']),
+        # Operator inside single-quoted string — not a split point
+        ("ssh host 'grep \"&&\" file'", ["ssh host 'grep \"&&\" file'"]),
+        # Mixed: outer && with inner || inside double-quoted arg
+        (
+            'ssh host "sudo cat /a" && ssh host "sudo git show HEAD 2>/dev/null || echo none"',
+            ['ssh host "sudo cat /a"', 'ssh host "sudo git show HEAD 2>/dev/null || echo none"'],
+        ),
+        # Trailing/leading whitespace is stripped from each fragment
+        ("  cmd1  &&  cmd2  ", ["cmd1", "cmd2"]),
+        # Single command — no split
+        ('ssh host "cat /etc/hosts"', ['ssh host "cat /etc/hosts"']),
+        # Empty string
+        ("", []),
+        # Only whitespace
+        ("   ", []),
+    ],
+)
+def test_split_commands(command: str, expected: list[str]) -> None:
+    assert _split_commands(command) == expected
+
+
+# ── Command chaining (newlines, &&, ||, ;) ────────────────────────────────────
 
 
 @pytest.mark.parametrize(
     "command",
     [
-        # Two read-only commands
+        # Two read-only commands — newline
         f'ssh {HOST} "grep foo /var/log/syslog" 2>&1\nssh {HOST} "ls -lh /var/log/syslog*" 2>&1',
-        # Three read-only commands
+        # Three read-only commands — newline
         f'ssh {HOST} "cat /etc/hosts"\nssh {HOST} "ls /tmp"\nssh {HOST} "ps aux"',
         # Blank lines between commands are ignored
         f'ssh {HOST} "cat /etc/hosts"\n\nssh {HOST} "ls /tmp"',
         # << inside a quoted argument is not a heredoc
         f"ssh {HOST} \"grep '<< marker' /var/log/app.log\"",
-        # Real-world case: two sudo read-only commands batched together
+        # Real-world case: two sudo read-only commands batched together — newline
         f"ssh {HOST} \"sudo -i grep 'USBCOPYFinished' /var/log/app.log | tail -20\" 2>&1\n"
         f'ssh {HOST} "sudo -i ls -lh /var/log/app.log*" 2>&1',
+        # && chaining — both read-only
+        f'ssh {HOST} "cat /etc/hosts" && ssh {HOST} "ls /tmp"',
+        # Real-world &&: sudo cat then sudo git show, with || fallback inside the quoted arg
+        f'ssh {HOST} "sudo -i cat /srv/.gitignore"'
+        f' && ssh {HOST} "sudo -i git -C /srv show HEAD:sub/.gitignore 2>/dev/null || echo (none)"',
+        # ; chaining — both read-only
+        f'ssh {HOST} "cat /etc/hosts"; ssh {HOST} "ls /tmp"',
+        # || chaining — both read-only (e.g. fallback on failure)
+        f'ssh {HOST} "cat /etc/hosts" || ssh {HOST} "echo unavailable"',
+        # Mixed operators
+        f'ssh {HOST} "cat /etc/hosts" && ssh {HOST} "ls /tmp"; ssh {HOST} "ps aux"',
+        # || inside quoted arg is part of the remote command, not a chain operator
+        f'ssh {HOST} "cat /etc/hosts || echo missing"',
     ],
 )
-def test_multiline_approved(command: str) -> None:
+def test_chaining_approved(command: str) -> None:
     assert decide(command, HOST) == "allow"
 
 
 @pytest.mark.parametrize(
     "command",
     [
-        # One read-only + one destructive
+        # One read-only + one destructive — newline
         f'ssh {HOST} "cat /etc/hosts"\nssh {HOST} "rm /tmp/foo"',
-        # Two destructive commands
+        # Two destructive commands — newline
         f'ssh {HOST} "rm /tmp/foo"\nssh {HOST} "systemctl restart nginx"',
+        # One read-only + one destructive — &&
+        f'ssh {HOST} "cat /etc/hosts" && ssh {HOST} "rm /tmp/foo"',
+        # One read-only + one destructive — ;
+        f'ssh {HOST} "cat /etc/hosts"; ssh {HOST} "rm /tmp/foo"',
+        # One read-only + one destructive — ||
+        f'ssh {HOST} "cat /etc/hosts" || ssh {HOST} "rm /tmp/foo"',
     ],
 )
-def test_multiline_blocked(command: str) -> None:
+def test_chaining_blocked(command: str) -> None:
     assert decide(command, HOST) == "ask"
 
 
 @pytest.mark.parametrize(
     "command",
     [
-        # One read-only + one local (non-SSH) command
+        # One read-only + one local (non-SSH) command — newline
         f'ssh {HOST} "cat /etc/hosts"\nls /tmp',
+        # One read-only + one local (non-SSH) command — &&
+        f'ssh {HOST} "cat /etc/hosts" && ls /tmp',
         # One read-only + wrong host
         f'ssh {HOST} "cat /etc/hosts"\nssh other "cat /etc/hosts"',
         # Heredoc (<<WORD at end of line)
@@ -285,7 +350,7 @@ def test_multiline_blocked(command: str) -> None:
         f"ssh {HOST} bash <<EOF\ncat /etc/hosts\nEOF",
     ],
 )
-def test_multiline_deferred(command: str) -> None:
+def test_chaining_deferred(command: str) -> None:
     assert decide(command, HOST) is None
 
 

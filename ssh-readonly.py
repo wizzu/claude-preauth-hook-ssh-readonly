@@ -210,6 +210,41 @@ def _decide_one(command: str, allowed_host: str) -> str | None:
     return "ask"
 
 
+def _split_commands(command: str) -> list[str]:
+    """Split a shell command string on newlines and operators (&&, ||, ;) outside quotes.
+
+    Intentionally naive: no support for escaped quotes, $(...), backticks, or
+    process substitution. Handles the common case of chained read-only SSH commands
+    without the complexity of a full shell parser. Unrecognised forms safely defer.
+    """
+    parts: list[str] = []
+    current: list[str] = []
+    in_sq = False
+    in_dq = False
+    i = 0
+    while i < len(command):
+        ch = command[i]
+        if ch == "'" and not in_dq:
+            in_sq = not in_sq
+            current.append(ch)
+        elif ch == '"' and not in_sq:
+            in_dq = not in_dq
+            current.append(ch)
+        elif not in_sq and not in_dq and command[i : i + 2] in ("&&", "||"):
+            parts.append("".join(current).strip())
+            current = []
+            i += 2
+            continue
+        elif not in_sq and not in_dq and ch in ("\n", ";"):
+            parts.append("".join(current).strip())
+            current = []
+        else:
+            current.append(ch)
+        i += 1
+    parts.append("".join(current).strip())
+    return [p for p in parts if p]
+
+
 def decide(command: str, allowed_host: str | None) -> str | None:
     """Classify an SSH command for the pre-tool-use hook.
 
@@ -220,19 +255,13 @@ def decide(command: str, allowed_host: str | None) -> str | None:
                    or has trailing shell tokens beyond benign fd redirections);
                    defer to Claude Code's default permissions.
 
-    Multi-line input (commands batched in a single bash call) is split on newlines
-    and each line classified independently; results are then aggregated.
+    The command is split on newlines and shell operators (&&, ||, ;) outside
+    quotes; each fragment is classified independently and results aggregated.
     """
     if not allowed_host:
         return None
 
-    # Split on newlines — intentionally naive rather than using a full shell parser.
-    # A proper parser would handle edge cases (quoted newlines, heredocs) more
-    # precisely, but at significant complexity cost for little practical gain: the
-    # realistic case is two read-only commands batched into one bash call, and naive
-    # splitting handles that correctly. All ambiguous cases safely defer to Claude
-    # Code; a false allow is not possible.
-    lines = [line.strip() for line in command.split("\n") if line.strip()]
+    lines = _split_commands(command)
     if not lines:
         return None
 
