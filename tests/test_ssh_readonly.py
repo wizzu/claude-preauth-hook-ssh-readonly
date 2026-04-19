@@ -254,12 +254,17 @@ def test_docker_blocked(command: str) -> None:
         ("cmd1 || cmd2", ["cmd1", "cmd2"]),
         # ; split
         ("cmd1; cmd2", ["cmd1", "cmd2"]),
-        # Mixed operators
+        # Mixed operators (no newline)
         ("cmd1 && cmd2; cmd3 || cmd4", ["cmd1", "cmd2", "cmd3", "cmd4"]),
+        # Mixed operators including newline
+        ("cmd1\ncmd2 && cmd3", ["cmd1", "cmd2", "cmd3"]),
+        ("cmd1 && cmd2\ncmd3; cmd4", ["cmd1", "cmd2", "cmd3", "cmd4"]),
         # Operator inside double-quoted string — not a split point
         ('ssh host "cat f || echo x"', ['ssh host "cat f || echo x"']),
         ('ssh host "cmd && other"', ['ssh host "cmd && other"']),
         ('ssh host "a; b"', ['ssh host "a; b"']),
+        # Newline inside double-quoted string — not a split point
+        ('ssh host "line1\nline2"', ['ssh host "line1\nline2"']),
         # Operator inside single-quoted string — not a split point
         ("ssh host 'grep \"&&\" file'", ["ssh host 'grep \"&&\" file'"]),
         # Mixed: outer && with inner || inside double-quoted arg
@@ -307,8 +312,10 @@ def test_split_commands(command: str, expected: list[str]) -> None:
         f'ssh {HOST} "cat /etc/hosts"; ssh {HOST} "ls /tmp"',
         # || chaining — both read-only (e.g. fallback on failure)
         f'ssh {HOST} "cat /etc/hosts" || ssh {HOST} "echo unavailable"',
-        # Mixed operators
+        # Mixed operators (no newline)
         f'ssh {HOST} "cat /etc/hosts" && ssh {HOST} "ls /tmp"; ssh {HOST} "ps aux"',
+        # Mixed: newline and && in the same batch
+        f'ssh {HOST} "cat /etc/hosts"\nssh {HOST} "ls /tmp" && ssh {HOST} "ps aux"',
         # || inside quoted arg is part of the remote command, not a chain operator
         f'ssh {HOST} "cat /etc/hosts || echo missing"',
     ],
