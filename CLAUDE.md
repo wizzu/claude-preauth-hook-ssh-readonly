@@ -16,6 +16,7 @@ Prefer `make` targets over invoking tools directly:
 - `make format` — auto-format source
 - `make test` — full test suite
 - `make test PYTEST_ARGS="-k test_debug"` — pytest keyword filter
+- `make test PYTEST_ARGS="-k 'test_foo or test_bar'"` — compound keyword (inner quotes required)
 - `make test PYTEST_ARGS="tests/test_ssh_readonly.py::test_name"` — single test
 
 Invoke pytest directly only when you need options that `make test PYTEST_ARGS=...` doesn't cover (e.g. `-s` to see print output while iterating).

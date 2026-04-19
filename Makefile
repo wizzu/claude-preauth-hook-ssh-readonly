@@ -38,9 +38,10 @@ format:
 	uv run ruff format $(SRC) $(TESTS)
 
 # Test: run test suite. Pass PYTEST_ARGS to forward options/filters to pytest.
-#   make test                          — full suite
-#   make test PYTEST_ARGS="-k test_debug"     — keyword filter
-#   make test PYTEST_ARGS="tests/test_ssh_readonly.py::test_debug_log_written_when_present"
+#   make test                                           — full suite
+#   make test PYTEST_ARGS="-k test_debug"              — keyword filter (single word)
+#   make test PYTEST_ARGS="-k 'test_foo or test_bar'"  — compound keyword (inner quotes required)
+#   make test PYTEST_ARGS="tests/test_ssh_readonly.py::test_name"  — single test
 test:
 	@echo "==> test"
 	uv run --extra dev pytest $(TESTS) $(PYTEST_ARGS)
