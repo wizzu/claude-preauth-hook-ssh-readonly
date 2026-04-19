@@ -237,6 +237,74 @@ def test_docker_blocked(command: str) -> None:
     assert decide(command, HOST) == "ask"
 
 
+# ── Multi-line ────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "command,expected",
+    [
+        # Two read-only commands → allow
+        (
+            f'ssh {HOST} "grep foo /var/log/syslog" 2>&1\n'
+            f'ssh {HOST} "ls -lh /var/log/syslog*" 2>&1',
+            "allow",
+        ),
+        # Three read-only commands → allow
+        (
+            f'ssh {HOST} "cat /etc/hosts"\nssh {HOST} "ls /tmp"\nssh {HOST} "ps aux"',
+            "allow",
+        ),
+        # Blank lines between commands are ignored
+        (
+            f'ssh {HOST} "cat /etc/hosts"\n\nssh {HOST} "ls /tmp"',
+            "allow",
+        ),
+        # One read-only + one destructive → ask
+        (
+            f'ssh {HOST} "cat /etc/hosts"\nssh {HOST} "rm /tmp/foo"',
+            "ask",
+        ),
+        # Two destructive commands → ask
+        (
+            f'ssh {HOST} "rm /tmp/foo"\nssh {HOST} "systemctl restart nginx"',
+            "ask",
+        ),
+        # One read-only + one local (non-SSH) command → None (defer)
+        (
+            f'ssh {HOST} "cat /etc/hosts"\nls /tmp',
+            None,
+        ),
+        # One read-only + wrong host → None (defer)
+        (
+            f'ssh {HOST} "cat /etc/hosts"\nssh other "cat /etc/hosts"',
+            None,
+        ),
+        # Heredoc (<<WORD at end of line) → None (defer)
+        (
+            f"ssh {HOST} \"bash -s\" <<'EOF'\ncat /etc/hosts\nEOF",
+            None,
+        ),
+        (
+            f"ssh {HOST} bash <<EOF\ncat /etc/hosts\nEOF",
+            None,
+        ),
+        # << mid-string is not a heredoc — should not cause a false defer
+        (
+            f"ssh {HOST} \"grep '<< marker' /var/log/app.log\"",
+            "allow",
+        ),
+        # Real-world case: two sudo read-only commands batched together
+        (
+            f"ssh {HOST} \"sudo -i grep 'USBCOPYFinished' /var/log/app.log | tail -20\" 2>&1\n"
+            f'ssh {HOST} "sudo -i ls -lh /var/log/app.log*" 2>&1',
+            "allow",
+        ),
+    ],
+)
+def test_multiline(command: str, expected: str | None) -> None:
+    assert decide(command, HOST) == expected
+
+
 # ── Debug log ─────────────────────────────────────────────────────────────────
 
 
@@ -274,6 +342,26 @@ def test_debug_log_written_when_present(tmp_path: Path, monkeypatch: pytest.Monk
     assert f"cmd={cmd!r}" in content
     assert f"host={HOST!r}" in content
     assert "inner='cat /etc/hosts'" in content
+    assert "decision='allow'" in content
+    assert content.endswith("---\n")
+
+
+def test_debug_log_multiline_lists_per_line_decisions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Multi-line commands log each constituent line and its decision, plus the aggregate."""
+    log_path = tmp_path / "ssh-readonly-debug.log"
+    log_path.touch()
+
+    line0 = f'ssh {HOST} "cat /etc/hosts"'
+    line1 = f'ssh {HOST} "ls /tmp"'
+    cmd = f"{line0}\n{line1}"
+    _run_main(monkeypatch, cmd, log_path)
+
+    content = log_path.read_text()
+    assert f"cmd={cmd!r}" in content
+    assert f"line[0]={line0!r} -> 'allow'" in content
+    assert f"line[1]={line1!r} -> 'allow'" in content
     assert "decision='allow'" in content
     assert content.endswith("---\n")
 

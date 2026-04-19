@@ -164,6 +164,11 @@ _SSH_RE = re.compile(
 # commands) is outside the hook's scope — defer to Claude Code rather than deciding either way.
 _BENIGN_TRAILING_RE = re.compile(r"^\s*(\d*>>?(&\d+|/dev/null)\s*)+$")
 
+# Heredoc redirection at the end of a command line: <<[-][whitespace]['"]WORD['"]
+# The end-of-line anchor prevents matching << that appears inside a quoted argument
+# (e.g. grep '<< marker' /log), which is not a heredoc.
+_HEREDOC_RE = re.compile(r"""<<-?\s*['""]?\w+['""]?\s*$""")
+
 
 def _parse_ssh(command: str) -> tuple[str, str, str | None] | None:
     """Parse an SSH command into (host, inner_cmd, trailing), or None if not a recognised form.
@@ -182,19 +187,12 @@ def _parse_ssh(command: str) -> tuple[str, str, str | None] | None:
     return host, m.group("uq").strip(), None
 
 
-def decide(command: str, allowed_host: str | None) -> str | None:
-    """Classify an SSH command for the pre-tool-use hook.
+def _decide_one(command: str, allowed_host: str) -> str | None:
+    """Classify a single SSH command (no newlines).
 
-    Returns:
-        "allow"  — read-only command on the configured host; auto-approve.
-        "ask"    — potentially destructive command on the configured host; block.
-        None     — outside the hook's scope (no host configured, wrong host, not SSH,
-                   or has trailing shell tokens beyond benign fd redirections);
-                   defer to Claude Code's default permissions.
+    Returns "allow", "ask", or None (defer). Callers must ensure allowed_host
+    is non-empty and that command contains no newlines.
     """
-    if not allowed_host:
-        return None
-
     parsed = _parse_ssh(command)
     if not parsed:
         return None
@@ -212,6 +210,45 @@ def decide(command: str, allowed_host: str | None) -> str | None:
     return "ask"
 
 
+def decide(command: str, allowed_host: str | None) -> str | None:
+    """Classify an SSH command for the pre-tool-use hook.
+
+    Returns:
+        "allow"  — read-only command on the configured host; auto-approve.
+        "ask"    — potentially destructive command on the configured host; block.
+        None     — outside the hook's scope (no host configured, wrong host, not SSH,
+                   or has trailing shell tokens beyond benign fd redirections);
+                   defer to Claude Code's default permissions.
+
+    Multi-line input (commands batched in a single bash call) is split on newlines
+    and each line classified independently; results are then aggregated.
+    """
+    if not allowed_host:
+        return None
+
+    # Split on newlines — intentionally naive rather than using a full shell parser.
+    # A proper parser would handle edge cases (quoted newlines, heredocs) more
+    # precisely, but at significant complexity cost for little practical gain: the
+    # realistic case is two read-only commands batched into one bash call, and naive
+    # splitting handles that correctly. All ambiguous cases safely defer to Claude
+    # Code; a false allow is not possible.
+    lines = [line.strip() for line in command.split("\n") if line.strip()]
+    if not lines:
+        return None
+
+    # Heredocs can't be safely classified after a naive split (the content lines
+    # would be evaluated as independent commands), so defer the whole thing.
+    if any(_HEREDOC_RE.search(line) for line in lines):
+        return None
+
+    results = [_decide_one(line, allowed_host) for line in lines]
+    if any(r is None for r in results):
+        return None
+    if any(r == "ask" for r in results):
+        return "ask"
+    return "allow"
+
+
 def main() -> None:
     allowed_host = sys.argv[1] if len(sys.argv) > 1 else None
 
@@ -221,14 +258,21 @@ def main() -> None:
     result = decide(cmd, allowed_host)
 
     if _DEBUG_LOG.exists():
-        parsed = _parse_ssh(cmd)
-        if parsed:
-            host, inner, trailing = parsed
-            with open(_DEBUG_LOG, "a") as f:
-                f.write(
-                    f"cmd={cmd!r}\nhost={host!r}\ninner={inner!r}\n"
-                    f"trailing={trailing!r}\ndecision={result!r}\n---\n"
-                )
+        lines = [line.strip() for line in cmd.split("\n") if line.strip()]
+        with open(_DEBUG_LOG, "a") as f:
+            if len(lines) > 1:
+                f.write(f"cmd={cmd!r}\n")
+                for i, line in enumerate(lines):
+                    f.write(f"line[{i}]={line!r} -> {_decide_one(line, allowed_host or '')!r}\n")
+                f.write(f"decision={result!r}\n---\n")
+            else:
+                parsed = _parse_ssh(cmd)
+                if parsed:
+                    host, inner, trailing = parsed
+                    f.write(
+                        f"cmd={cmd!r}\nhost={host!r}\ninner={inner!r}\n"
+                        f"trailing={trailing!r}\ndecision={result!r}\n---\n"
+                    )
 
     if result is None:
         sys.exit(0)  # Defer to Claude Code's default permissions
