@@ -241,68 +241,52 @@ def test_docker_blocked(command: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "command,expected",
+    "command",
     [
-        # Two read-only commands → allow
-        (
-            f'ssh {HOST} "grep foo /var/log/syslog" 2>&1\n'
-            f'ssh {HOST} "ls -lh /var/log/syslog*" 2>&1',
-            "allow",
-        ),
-        # Three read-only commands → allow
-        (
-            f'ssh {HOST} "cat /etc/hosts"\nssh {HOST} "ls /tmp"\nssh {HOST} "ps aux"',
-            "allow",
-        ),
+        # Two read-only commands
+        f'ssh {HOST} "grep foo /var/log/syslog" 2>&1\nssh {HOST} "ls -lh /var/log/syslog*" 2>&1',
+        # Three read-only commands
+        f'ssh {HOST} "cat /etc/hosts"\nssh {HOST} "ls /tmp"\nssh {HOST} "ps aux"',
         # Blank lines between commands are ignored
-        (
-            f'ssh {HOST} "cat /etc/hosts"\n\nssh {HOST} "ls /tmp"',
-            "allow",
-        ),
-        # One read-only + one destructive → ask
-        (
-            f'ssh {HOST} "cat /etc/hosts"\nssh {HOST} "rm /tmp/foo"',
-            "ask",
-        ),
-        # Two destructive commands → ask
-        (
-            f'ssh {HOST} "rm /tmp/foo"\nssh {HOST} "systemctl restart nginx"',
-            "ask",
-        ),
-        # One read-only + one local (non-SSH) command → None (defer)
-        (
-            f'ssh {HOST} "cat /etc/hosts"\nls /tmp',
-            None,
-        ),
-        # One read-only + wrong host → None (defer)
-        (
-            f'ssh {HOST} "cat /etc/hosts"\nssh other "cat /etc/hosts"',
-            None,
-        ),
-        # Heredoc (<<WORD at end of line) → None (defer)
-        (
-            f"ssh {HOST} \"bash -s\" <<'EOF'\ncat /etc/hosts\nEOF",
-            None,
-        ),
-        (
-            f"ssh {HOST} bash <<EOF\ncat /etc/hosts\nEOF",
-            None,
-        ),
-        # << mid-string is not a heredoc — should not cause a false defer
-        (
-            f"ssh {HOST} \"grep '<< marker' /var/log/app.log\"",
-            "allow",
-        ),
+        f'ssh {HOST} "cat /etc/hosts"\n\nssh {HOST} "ls /tmp"',
+        # << inside a quoted argument is not a heredoc
+        f"ssh {HOST} \"grep '<< marker' /var/log/app.log\"",
         # Real-world case: two sudo read-only commands batched together
-        (
-            f"ssh {HOST} \"sudo -i grep 'USBCOPYFinished' /var/log/app.log | tail -20\" 2>&1\n"
-            f'ssh {HOST} "sudo -i ls -lh /var/log/app.log*" 2>&1',
-            "allow",
-        ),
+        f"ssh {HOST} \"sudo -i grep 'USBCOPYFinished' /var/log/app.log | tail -20\" 2>&1\n"
+        f'ssh {HOST} "sudo -i ls -lh /var/log/app.log*" 2>&1',
     ],
 )
-def test_multiline(command: str, expected: str | None) -> None:
-    assert decide(command, HOST) == expected
+def test_multiline_approved(command: str) -> None:
+    assert decide(command, HOST) == "allow"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        # One read-only + one destructive
+        f'ssh {HOST} "cat /etc/hosts"\nssh {HOST} "rm /tmp/foo"',
+        # Two destructive commands
+        f'ssh {HOST} "rm /tmp/foo"\nssh {HOST} "systemctl restart nginx"',
+    ],
+)
+def test_multiline_blocked(command: str) -> None:
+    assert decide(command, HOST) == "ask"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        # One read-only + one local (non-SSH) command
+        f'ssh {HOST} "cat /etc/hosts"\nls /tmp',
+        # One read-only + wrong host
+        f'ssh {HOST} "cat /etc/hosts"\nssh other "cat /etc/hosts"',
+        # Heredoc (<<WORD at end of line)
+        f"ssh {HOST} \"bash -s\" <<'EOF'\ncat /etc/hosts\nEOF",
+        f"ssh {HOST} bash <<EOF\ncat /etc/hosts\nEOF",
+    ],
+)
+def test_multiline_deferred(command: str) -> None:
+    assert decide(command, HOST) is None
 
 
 # ── Debug log ─────────────────────────────────────────────────────────────────
