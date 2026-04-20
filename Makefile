@@ -35,7 +35,7 @@ pre-commit-hook: lint
 # Format: auto-reformat source code in place
 format:
 	@echo "==> format"
-	uv run ruff format $(SRC) $(TESTS)
+	uv run ruff format $(SRC) $(TESTS) $(TOOLS)
 
 # Test: run test suite. Pass PYTEST_ARGS to forward options/filters to pytest.
 #   make test                                           — full suite

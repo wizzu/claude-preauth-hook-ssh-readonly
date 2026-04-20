@@ -6,7 +6,8 @@ to trace the command through `decide()` — not to explain Claude Code's general
 permission system.
 
 To diagnose a specific command:
-- Test directly: `echo '{"tool_input": {"command": "ssh host \"cmd\""}}' | python3 ssh-readonly.py host`
+- Evaluate: `python3 tools/evaluate-command.py <host> '<command>'` — full breakdown of parse + decision
+- Fallback (if evaluate-command.py can't be used): `echo '{"tool_input": {"command": "ssh host \"cmd\""}}' | python3 ssh-readonly.py host`
 - For live traffic, enable the debug log first: `touch ~/.claude/hooks/ssh-readonly-debug.log` (next to the installed script)
 
 ## Development

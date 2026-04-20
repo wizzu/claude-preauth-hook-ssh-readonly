@@ -61,16 +61,38 @@ output redirection, `find -exec`/`-delete`, `sed -i`, `tee` in pipelines, and
 
 ## Debugging
 
-The script logs to `ssh-readonly-debug.log` in the same directory as the
-script when that file exists. To enable:
+**Evaluating a specific command** — to understand how the hook classifies a
+given command string (post-fact analysis, development), use
+`tools/evaluate-command.py`:
 
 ```bash
-touch /path/to/ssh-readonly-debug.log
+python3 tools/evaluate-command.py <host> '<command>'
+
+# Multi-line or complex quoting: read from stdin
+echo 'ssh host "cmd"' | python3 tools/evaluate-command.py <host>
+```
+
+It prints a full breakdown: how the command was split into fragments, the
+parsed host/inner/trailing for each, which regex matched (or didn't), and the
+final decision (`ALLOW` / `ASK` / `DEFER`).
+
+If you need direct control over the raw hook input (e.g. to test edge cases in
+the JSON parsing), you can drive the script directly:
+
+```bash
+echo '{"tool_input": {"command": "ssh prod-server \"grep foo /etc/conf\""}}' \
+  | python3 ssh-readonly.py prod-server
+```
+
+**Debugging a live session** — the script logs to `ssh-readonly-debug.log` in
+the same directory as the installed script when that file exists. To enable:
+
+```bash
+touch ~/.claude/hooks/ssh-readonly-debug.log
 ```
 
 To disable, delete the file. The log records `cmd`, `host`, `inner`,
-`trailing`, and `decision` for each invocation, which is enough to diagnose
-why a command was or wasn't auto-approved.
+`trailing`, and `decision` for each invocation.
 
 ## Development
 
@@ -107,15 +129,7 @@ make install
 # equivalent to: cp ssh-readonly.py ~/.claude/hooks/ssh-readonly.py
 ```
 
-For ad-hoc checks, you can also drive the script directly:
-
-```bash
-echo '{"tool_input": {"command": "ssh prod-server \"grep foo /etc/conf\""}}' \
-  | python3 ssh-readonly.py prod-server
-```
-
-Expected output for an approved command:
-`{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow", ...}}`
+For ad-hoc checks, see the **Debugging** section above.
 
 ## Notes
 
