@@ -77,6 +77,63 @@ question at runtime.
   `rm`, `exec`, …). Already handled in the SSH hook's pattern list — reuse that
   in `local-readonly.py`.
 
+### Cross-domain pipelines
+
+The "each hook owns one domain" principle breaks down for pipelines that mix
+domains, such as:
+
+```
+ssh host "sudo -i cat /path/to/file" 2>/dev/null | grep -A 20 "pattern"
+```
+
+This is clearly read-only, but no single hook can approve it:
+
+- **ssh hook**: parses the command, finds `trailing = "2>/dev/null | grep ..."`,
+  which fails `_BENIGN_TRAILING_RE` (only pure fd/devnull redirections pass).
+  Returns `None` — defer.
+- **local hook** (hypothetical): sees the full command; the first token is `ssh`,
+  not a local read command. Returns `None` — defer.
+
+Two defers means the overall decision is defer — Claude Code asks for permission
+despite the command being entirely read-only.
+
+**Why splitting on `|` doesn't fix this on its own**
+
+If `_split_commands()` were extended to split on `|`, the two segments would be:
+- `ssh host "..." 2>/dev/null` → ssh hook: allow; local hook: defer (not local)
+- `grep -A 20 "pattern"` → local hook: allow; ssh hook: defer (not SSH)
+
+Each hook still encounters one out-of-domain segment and returns overall `None`.
+The hooks have no way to cooperate — they run in parallel, each sees the whole
+command, and "most restrictive wins" means two partial defers still equal defer.
+
+**Viable paths**
+
+1. **Extend the ssh hook's trailing classification.** A pipe into a local
+   read-only command doesn't make the SSH command write-capable; it only
+   transforms the output locally. The ssh hook already owns trailing
+   classification — extend it to recognise `| <safe-local-cmd>` in addition to
+   pure fd/devnull redirections. Requires a local-safe-command allowlist that
+   excludes dangerous cases (`tee`, `xargs`, `sudo`, etc.). Contained change, no
+   new infrastructure needed, but it conflates two domains inside one hook.
+
+2. **Split on `|` and add segment-ownership semantics.** A hook that defers
+   because a segment is out-of-domain is different from one that defers because
+   the segment is unsafe. If hooks could signal "I don't own this segment" vs "I
+   own this segment and it's risky", an aggregation layer could combine partial
+   approvals across hooks. This doesn't fit the current hook protocol and would
+   require a new coordination mechanism.
+
+3. **A pipeline coordinator hook.** A dedicated hook that handles mixed-domain
+   pipelines: splits on `|`, classifies each segment against all domain rules
+   (from a shared library), and emits a single decision for the whole pipeline.
+   Conceptually cleanest, but depends on the shared-infrastructure question being
+   resolved first.
+
+Path 1 is the most practical near-term fix given the current single-hook
+architecture. Paths 2 and 3 make more sense once multiple hooks exist and the
+shared-infrastructure approach is settled.
+
 ### Reference
 
 `https://github.com/DavidTeju/shared-skills/blob/main/hooks/user-level/readonly-gate.sh`
