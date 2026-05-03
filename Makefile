@@ -2,7 +2,10 @@ SRC = ssh-readonly.py
 TESTS = tests
 TOOLS = tools
 
-.PHONY: check lint format test setup install install-git-commit-hooks add-claude-preauth-hook pre-commit-hook clean distclean
+.PHONY: all check lint format test setup install install-git-commit-hooks add-claude-preauth-hook pre-commit-hook clean distclean
+
+# Default: run all checks (no system modifications)
+all: check
 
 # Install the hook script to ~/.claude/hooks/
 install:
