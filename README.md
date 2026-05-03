@@ -1,3 +1,33 @@
+# claude-preauth-hook-ssh-readonly
+
+A [Claude Code](https://claude.ai/code) `PreToolUse` hook that auto-approves
+safe, read-only SSH commands and lets everything else fall through to Claude
+Code's normal permission prompt.
+
+## When to use this
+
+If you work with Claude in a context where it issues SSH commands — e.g.
+inspecting a remote server, reading logs, or checking config — Claude will ask
+permission before every command. Most are harmless reads (`cat`, `grep`, `ls`,
+`systemctl status`), but some could modify state.
+
+This hook splits that burden: it silently approves commands that match a
+read-only allowlist and does nothing for everything else, so Claude Code's
+built-in prompt still handles writes and anything ambiguous.
+
+## How it works
+
+The hook intercepts every `Bash` tool call. For SSH commands targeting the
+configured host, it returns one of three decisions:
+
+- **Allow** — inner command matches the read-only allowlist and no unsafe
+  patterns are present (output redirection, `sed -i`, `find -exec`, etc.) →
+  auto-approved, no prompt
+- **Ask** — something looks risky → falls through to Claude Code's permission
+  prompt as normal
+- **Defer** — not an SSH command, or SSH to a different host → hook does
+  nothing, normal Claude Code behavior applies
+
 ## Installation
 
 ```bash
