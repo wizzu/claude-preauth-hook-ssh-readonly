@@ -2,7 +2,7 @@ SRC = ssh-readonly.py
 TESTS = tests
 TOOLS = tools
 
-.PHONY: check lint format test setup install install-hooks pre-commit-hook clean distclean
+.PHONY: check lint format test setup install install-git-commit-hooks add-claude-preauth-hook pre-commit-hook clean distclean
 
 # Install the hook script to ~/.claude/hooks/
 install:
@@ -13,9 +13,16 @@ install:
 setup:
 	uv sync --extra dev
 
-# Install git pre-commit hooks (runs setup first)
-install-hooks: setup
+# Install git pre-commit hooks for this repo (runs setup first)
+install-git-commit-hooks: setup
 	uv run pre-commit install
+
+# Add a PreToolUse hook for the given SSH host to .claude/settings.json.
+# Targets the current directory by default; pass DIR= to specify another project.
+# Usage: make add-claude-preauth-hook SSHHOST=dev-server [DIR=/path/to/project]
+add-claude-preauth-hook:
+	@[ -n "$(SSHHOST)" ] || { echo "Usage: make add-claude-preauth-hook SSHHOST=<hostname> [DIR=<project-dir>]"; exit 1; }
+	python3 $(TOOLS)/add-claude-preauth-hook.py $(SSHHOST)$(if $(DIR), --dir $(DIR),)
 
 # Run all checks (lint + test). Does not auto-format.
 check: lint test

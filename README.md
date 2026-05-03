@@ -38,8 +38,17 @@ make install
 
 ## Per-project setup
 
-In each project's `.claude/settings.json`, add a `PreToolUse` hook and pass
-the allowed SSH host as an argument:
+Run the helper from within the project you want to configure:
+
+```bash
+python3 /path/to/claude-preauth-hook-ssh-readonly/tools/add-claude-preauth-hook.py dev-server
+```
+
+It shows what it will add, asks for confirmation, and backs up `settings.json`
+if one already exists. If the hook for that host is already present, it does
+nothing.
+
+To configure manually instead, add a `PreToolUse` hook to `.claude/settings.json`:
 
 ```json
 {
@@ -129,7 +138,7 @@ To disable, delete the file. The log records `cmd`, `host`, `inner`,
 **First-time setup** (creates `.venv`, installs dev deps, installs git hooks):
 
 ```bash
-make install-hooks
+make install-git-commit-hooks
 ```
 
 **Common tasks:**
