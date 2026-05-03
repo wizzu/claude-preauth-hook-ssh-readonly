@@ -52,9 +52,9 @@ def main() -> int:
     parser.add_argument("host", help="SSH hostname or alias to configure")
     parser.add_argument(
         "--dir",
-        default=".",
+        required=True,
         metavar="DIR",
-        help="project directory containing .claude/ (default: current directory)",
+        help="directory containing .claude/ — use a project path or ~ for global config",
     )
     args = parser.parse_args()
 

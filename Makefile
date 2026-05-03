@@ -21,11 +21,12 @@ install-git-commit-hooks: setup
 	uv run pre-commit install
 
 # Add a PreToolUse hook for the given SSH host to .claude/settings.json.
-# Targets the current directory by default; pass DIR= to specify another project.
-# Usage: make add-claude-preauth-hook SSHHOST=dev-server [DIR=/path/to/project]
+# Use DIR=~ for global config or DIR=/path/to/project for per-project config.
+# Usage: make add-claude-preauth-hook SSHHOST=<hostname> DIR=<path|~>
 add-claude-preauth-hook:
-	@[ -n "$(SSHHOST)" ] || { echo "Usage: make add-claude-preauth-hook SSHHOST=<hostname> [DIR=<project-dir>]"; exit 1; }
-	python3 $(TOOLS)/add-claude-preauth-hook.py $(SSHHOST)$(if $(DIR), --dir $(DIR),)
+	@[ -n "$(SSHHOST)" ] || { echo "Usage: make add-claude-preauth-hook SSHHOST=<hostname> DIR=<path|~>"; exit 1; }
+	@[ -n "$(DIR)" ] || { echo "Usage: make add-claude-preauth-hook SSHHOST=<hostname> DIR=<path|~>"; exit 1; }
+	python3 $(TOOLS)/add-claude-preauth-hook.py --dir $(DIR) $(SSHHOST)
 
 # Run all checks (lint + test). Does not auto-format.
 check: lint test

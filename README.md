@@ -17,38 +17,44 @@ built-in prompt still handles writes and anything ambiguous.
 
 ## How it works
 
-The hook intercepts every `Bash` tool call. For SSH commands targeting the
-configured host, it returns one of three decisions:
+Claude Code's `PreToolUse` hook interface supports three standard outcomes for
+any tool call: auto-approve it, force a permission prompt, or defer to Claude
+Code's default behavior. This script classifies each SSH command into one of
+those outcomes:
 
 - **Allow** — inner command matches the read-only allowlist and no unsafe
   patterns are present (output redirection, `sed -i`, `find -exec`, etc.) →
   auto-approved, no prompt
-- **Ask** — something looks risky → falls through to Claude Code's permission
-  prompt as normal
-- **Defer** — not an SSH command, or SSH to a different host → hook does
-  nothing, normal Claude Code behavior applies
+- **Ask** — inner command could modify state → forces Claude Code's permission prompt
+- **Defer** — not an SSH command, or SSH to a different host → hook produces
+  no output, normal Claude Code behavior applies
 
-## Installation
+## Getting started
 
-```bash
-make install
-# equivalent to: cp ssh-readonly.py ~/.claude/hooks/ssh-readonly.py
-# (make install preserves the executable bit via cp -a; if copying manually, add chmod +x)
-```
-
-## Per-project setup
-
-Run the helper from within the project you want to configure:
+**Install the hook script** (once per machine):
 
 ```bash
-python3 /path/to/claude-preauth-hook-ssh-readonly/tools/add-claude-preauth-hook.py dev-server
+make check     # optional but recommended: verify tests pass before installing
+make install   # copy the hook script to ~/.claude/hooks/
 ```
 
-It shows what it will add, asks for confirmation, and backs up `settings.json`
-if one already exists. If the hook for that host is already present, it does
-nothing.
+**Configure where you want the hook active.** It can be added per-project
+(only takes effect in that project) or globally (takes effect in all sessions):
 
-To configure manually instead, add a `PreToolUse` hook to `.claude/settings.json`:
+```bash
+# Per-project — only active within that project:
+make add-claude-preauth-hook SSHHOST=<hostname> DIR=/path/to/project
+
+# Global — active in all Claude Code sessions:
+make add-claude-preauth-hook SSHHOST=<hostname> DIR=~
+```
+
+The command shows what it will add, asks for confirmation, and backs up
+`settings.json` if one already exists. If the hook for that host is already
+present, it does nothing.
+
+To configure manually instead, add a `PreToolUse` hook to
+`.claude/settings.json` (in the project directory or in `~/.claude/`):
 
 ```json
 {
@@ -68,9 +74,12 @@ To configure manually instead, add a `PreToolUse` hook to `.claude/settings.json
 }
 ```
 
-Replace `<hostname>` with the SSH alias used in that project (e.g. `dev-server`
-or `prod-server`). Only commands matching that host are auto-approved; SSH to
-any other host falls through to the prompt.
+Replace `<hostname>` with the SSH alias to approve. Only commands matching that
+host are auto-approved; SSH to any other host falls through to the prompt.
+
+> **Note:** Claude Code will ask for one-time approval of a newly configured
+> hook on first use. If commands aren't being auto-approved as expected, run
+> `/hooks` inside the session to check the hook's status.
 
 ## Configuring the allowlist
 
@@ -135,19 +144,11 @@ To disable, delete the file. The log records `cmd`, `host`, `inner`,
 
 ## Development
 
-**First-time setup** (creates `.venv`, installs dev deps, installs git hooks):
+**Set up the dev environment** (once):
 
 ```bash
-make install-git-commit-hooks
-```
-
-**Common tasks:**
-
-```bash
-make check     # all quality checks: lint + test
-make lint      # ruff, bandit, mypy, suppression check
-make format    # reformat code in place
-make test      # run test suite
+make install-git-commit-hooks   # create venv, install deps, install pre-commit hooks
+make install                    # also run this if you want to use the hook yourself
 ```
 
 **Editing the allowlist:**
@@ -165,18 +166,27 @@ make test      # run test suite
 ```bash
 make check
 make install
-# equivalent to: cp ssh-readonly.py ~/.claude/hooks/ssh-readonly.py
 ```
 
 For ad-hoc checks, see the **Debugging** section above.
 
+## Make targets
+
+| Target | Description |
+|---|---|
+| `make` / `make check` | Run all checks: lint + tests |
+| `make lint` | Static analysis, type checking, format check |
+| `make format` | Auto-reformat source code |
+| `make test` | Run test suite |
+| `make install` | Copy hook script to `~/.claude/hooks/` |
+| `make add-claude-preauth-hook SSHHOST=<hostname> DIR=<path\|~>` | Add hook to `.claude/settings.json` (project path or `~` for global) |
+| `make install-git-commit-hooks` | Set up dev environment (venv + pre-commit) |
+| `make clean` | Remove caches and artifacts |
+| `make distclean` | Remove everything including venv |
+
 ## Notes
 
-- The hook must be executable (`chmod +x`)
-- Claude Code will ask for one-time approval of a new project-level hook on
-  first use — check `/hooks` inside the session if commands aren't being
-  auto-approved
+- The hook must be executable (`chmod +x`) — `make install` handles this; if
+  copying manually, run `chmod +x ~/.claude/hooks/ssh-readonly.py`
 - Non-SSH commands and SSH to any host other than the configured one produce no
-  hook output, deferring to Claude Code's default permission logic — not
-  silently blocked or automatically prompted by the hook
-
+  hook output — they are not silently blocked, just unaffected by this hook
