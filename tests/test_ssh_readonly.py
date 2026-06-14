@@ -104,8 +104,6 @@ def test_approved(command: str) -> None:
         (f'ssh {HOST} "grep foo /etc/passwd"', None),  # no host configured
         # Non-benign trailing shell actions — outside the hook's scope; defer rather than deciding
         (f'ssh {HOST} "cat /etc/passwd" > /tmp/out', HOST),
-        (f'ssh {HOST} "cat /etc/passwd" | grep root', HOST),
-        (f'ssh {HOST} "cat /etc/passwd" && echo done', HOST),
         ('ssh other "grep foo /etc/passwd"', HOST),  # wrong host
         ("grep foo /etc/passwd", HOST),  # not SSH
         ("du -sh /some/local/path", HOST),  # local command
@@ -334,6 +332,18 @@ def test_split_commands(command: str, expected: list[str]) -> None:
         f'ssh {HOST} "ls /tmp; cat /etc/hosts"',
         # Inner && — both segments read-only
         f'ssh {HOST} "ls /tmp && cat /etc/hosts"',
+        # Outer pipe — local segment is read-only
+        f'ssh {HOST} "cat /etc/passwd" | grep root',
+        f'ssh {HOST} "ls /tmp" | head -20',
+        f'ssh {HOST} "cat /etc/hosts" | wc -l',
+        # Outer &&, ||, ;, newline — local segment is read-only
+        f'ssh {HOST} "cat /etc/passwd" && echo done',
+        f'ssh {HOST} "cat /etc/hosts"\nls /tmp',
+        f'ssh {HOST} "cat /etc/hosts" && ls /tmp',
+        f'ssh {HOST} "cat /etc/hosts" || echo fallback',
+        f'ssh {HOST} "cat /etc/hosts"; echo done',
+        # Multi-stage outer pipeline — all local segments read-only
+        f'ssh {HOST} "cat /etc/passwd" | grep root | wc -l',
     ],
 )
 def test_chaining_approved(command: str) -> None:
@@ -366,15 +376,18 @@ def test_chaining_blocked(command: str) -> None:
 @pytest.mark.parametrize(
     "command",
     [
-        # One read-only + one local (non-SSH) command — newline
-        f'ssh {HOST} "cat /etc/hosts"\nls /tmp',
-        # One read-only + one local (non-SSH) command — &&
-        f'ssh {HOST} "cat /etc/hosts" && ls /tmp',
         # One read-only + wrong host
         f'ssh {HOST} "cat /etc/hosts"\nssh other "cat /etc/hosts"',
         # Heredoc (<<WORD at end of line)
         f"ssh {HOST} \"bash -s\" <<'EOF'\ncat /etc/hosts\nEOF",
         f"ssh {HOST} bash <<EOF\ncat /etc/hosts\nEOF",
+        # Outer pipe — local segment writes (tee) or has redirection
+        f'ssh {HOST} "ls" | tee /tmp/out',
+        f'ssh {HOST} "ls" | grep foo > /tmp/out',
+        # Outer pipe — local segment is destructive
+        f'ssh {HOST} "ls /tmp" | rm /tmp/foo',
+        # Outer pipe — command substitution in local segment
+        f'ssh {HOST} "ls" | head $(cat /etc/passwd)',
     ],
 )
 def test_chaining_deferred(command: str) -> None:

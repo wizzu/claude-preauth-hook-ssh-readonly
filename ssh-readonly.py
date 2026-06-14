@@ -274,7 +274,20 @@ def decide(command: str, allowed_host: str | None) -> str | None:
     if any(_HEREDOC_RE.search(line) for line in lines):
         return None
 
-    results = [_decide_one(line, allowed_host) for line in lines]
+    has_ssh = any(_parse_ssh(line) is not None for line in lines)
+    results = []
+    for line in lines:
+        result = _decide_one(line, allowed_host)
+        if result is None and has_ssh and _parse_ssh(line) is None:
+            # Non-SSH fragment alongside an SSH command (e.g. local end of a pipeline)
+            if (
+                "$(" not in line
+                and "`" not in line
+                and readonly_re.match(line)
+                and not unsafe_re.search(line)
+            ):
+                result = "allow"
+        results.append(result)
     if any(r is None for r in results):
         return None
     if any(r == "ask" for r in results):
