@@ -110,6 +110,9 @@ def test_approved(command: str) -> None:
         ("grep foo /etc/passwd", HOST),  # not SSH
         ("du -sh /some/local/path", HOST),  # local command
         ("ls -la /tmp", HOST),  # local command
+        # Command substitution — can't safely analyse; defer
+        (f'ssh {HOST} "cat $(ls /tmp)"', HOST),
+        (f'ssh {HOST} "cat `ls /tmp`"', HOST),
     ],
 )
 def test_deferred(command: str, host: str | None) -> None:
@@ -259,6 +262,12 @@ def test_docker_blocked(command: str) -> None:
         # Mixed operators including newline
         ("cmd1\ncmd2 && cmd3", ["cmd1", "cmd2", "cmd3"]),
         ("cmd1 && cmd2\ncmd3; cmd4", ["cmd1", "cmd2", "cmd3", "cmd4"]),
+        # | split
+        ("cmd1 | cmd2", ["cmd1", "cmd2"]),
+        # Pipe inside double-quoted string — not a split point
+        ('ssh host "ls | head"', ['ssh host "ls | head"']),
+        # Pipe outside quotes — splits
+        ('ssh host "ls" | head', ['ssh host "ls"', "head"]),
         # Operator inside double-quoted string — not a split point
         ('ssh host "cat f || echo x"', ['ssh host "cat f || echo x"']),
         ('ssh host "cmd && other"', ['ssh host "cmd && other"']),
@@ -318,6 +327,13 @@ def test_split_commands(command: str, expected: list[str]) -> None:
         f'ssh {HOST} "cat /etc/hosts"\nssh {HOST} "ls /tmp" && ssh {HOST} "ps aux"',
         # || inside quoted arg is part of the remote command, not a chain operator
         f'ssh {HOST} "cat /etc/hosts || echo missing"',
+        # Inner pipe — both segments read-only
+        f'ssh {HOST} "ls /tmp | head -20"',
+        f'ssh {HOST} "sudo -i ls /srv | grep conf"',
+        # Inner semicolon — both segments read-only
+        f'ssh {HOST} "ls /tmp; cat /etc/hosts"',
+        # Inner && — both segments read-only
+        f'ssh {HOST} "ls /tmp && cat /etc/hosts"',
     ],
 )
 def test_chaining_approved(command: str) -> None:
@@ -337,6 +353,10 @@ def test_chaining_approved(command: str) -> None:
         f'ssh {HOST} "cat /etc/hosts"; ssh {HOST} "rm /tmp/foo"',
         # One read-only + one destructive — ||
         f'ssh {HOST} "cat /etc/hosts" || ssh {HOST} "rm /tmp/foo"',
+        # Inner pipe — write command after pipe
+        f'ssh {HOST} "ls /tmp | rm /tmp/foo"',
+        # Inner semicolon — write command after semicolon
+        f'ssh {HOST} "ls /tmp; rm /tmp/foo"',
     ],
 )
 def test_chaining_blocked(command: str) -> None:

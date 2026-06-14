@@ -205,13 +205,17 @@ def _decide_one(command: str, allowed_host: str) -> str | None:
     if trailing and not _BENIGN_TRAILING_RE.match(trailing):
         return None  # trailing shell action — not our call; defer
 
-    if readonly_re.match(inner) and not unsafe_re.search(inner):
+    if "$(" in inner or "`" in inner:
+        return None  # command substitution — can't safely analyse without a shell parser
+
+    segments = _split_commands(inner)
+    if all(readonly_re.match(seg) and not unsafe_re.search(seg) for seg in segments):
         return "allow"
     return "ask"
 
 
 def _split_commands(command: str) -> list[str]:
-    """Split a shell command string on newlines and operators (&&, ||, ;) outside quotes.
+    """Split a shell command string on newlines, pipes, and operators (&&, ||, ;) outside quotes.
 
     Intentionally naive: no support for escaped quotes, $(...), backticks, or
     process substitution. Handles the common case of chained read-only SSH commands
@@ -235,7 +239,7 @@ def _split_commands(command: str) -> list[str]:
             current = []
             i += 2
             continue
-        elif not in_sq and not in_dq and ch in ("\n", ";"):
+        elif not in_sq and not in_dq and ch in ("\n", ";", "|"):
             parts.append("".join(current).strip())
             current = []
         else:
